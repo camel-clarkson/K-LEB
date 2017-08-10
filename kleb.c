@@ -2,12 +2,11 @@
 #include <linux/module.h>
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
-#include <linux/time.h>
-//#include <linux/delay.h>
+//#include <linux/time.h>
 #include <linux/math64.h>
 #include <linux/slab.h>
 
-MODULE_LICENSE("GPL");
+//MODULE_LICENSE("GPL"); // Currently using the MIT license
 MODULE_AUTHOR("James Bruska");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
 MODULE_VERSION("0.1.1");
@@ -23,14 +22,14 @@ static int** hardware_events;
 
 enum hrtimer_restart hrtimer_callback( struct hrtimer *timer )
 {
-	int i;
 	// DEBUG
+	//int i;
 	//getnstimeofday( &ts2 );
 	//printk( "%ld - \n%ld = \n%ld\n", ts2.tv_nsec, ts1.tv_nsec, ts2.tv_nsec - ts1.tv_nsec);
 
 	if ( counter <= 5 ) {
 		// DEBUG
-		printk( "counter: %d; ", counter );
+		printk( "counter: %d\n; ", counter );
 		/*for ( i=0; i < num_events; ++i){
 			hardware_events[i][counter] = i*10 + counter;
 		}*/
@@ -82,7 +81,9 @@ int init_module( void )
 
 void cleanup_module( void )
 {
-	int ret, i, j;
+	int ret;
+	// DEBUG
+	//int i, j;
 
 	printk( "HR Timer module uninstalling\n" );
 	
