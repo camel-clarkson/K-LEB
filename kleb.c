@@ -1,19 +1,23 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/hrtimer.h>
-#include <linux/ktime.h>
-//#include <linux/time.h>
-#include <linux/math64.h>
-#include <linux/slab.h>
+#include <linux/hrtimer.h> // high res timer
+#include <linux/ktime.h> // ktime representation
+#include <linux/math64.h> // div_u64
+#include <linux/slab.h> // kmalloc
+#include <linux/device.h>
+//#include <linux/
 
-//MODULE_LICENSE("GPL"); // Currently using the MIT license
+
+// DEBUG
+#include <linux/time.h>
+
+MODULE_LICENSE("GPL"); // Currently using the MIT license
 MODULE_AUTHOR("James Bruska");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
-MODULE_VERSION("0.1.1");
-
-//#define US_TO_NS(x) (x * 1E3L)
+MODULE_VERSION("0.2.0");
 
 static struct hrtimer hr_timer;
+static ktime_t ktime_period_ns;
 static int delay_in_ns, num_events, num_recordings, counter;
 static int** hardware_events;
 
@@ -22,19 +26,30 @@ static int** hardware_events;
 
 enum hrtimer_restart hrtimer_callback( struct hrtimer *timer )
 {
+	ktime_t kt_now;
+	int overrun;	
+
 	// DEBUG
 	//int i;
+	//long int old_time_ns = ts2.tv_nsec;
 	//getnstimeofday( &ts2 );
+	//printk( "delay: %ld\n", ts2.tv_nsec - old_time_ns);	
 	//printk( "%ld - \n%ld = \n%ld\n", ts2.tv_nsec, ts1.tv_nsec, ts2.tv_nsec - ts1.tv_nsec);
 
 	if ( counter <= 5 ) {
 		// DEBUG
-		printk( "counter: %d\n; ", counter );
+		printk( "counter: %d\n", counter );
 		/*for ( i=0; i < num_events; ++i){
 			hardware_events[i][counter] = i*10 + counter;
 		}*/
 
 		++counter;
+		kt_now = hrtimer_cb_get_time( &hr_timer );
+		overrun = hrtimer_forward( &hr_timer, kt_now, ktime_period_ns );
+		
+		// DEBUG
+		//printk( KERN_INFO "overrun: %d ; kt_nsec: %lld \n", overrun, ktime_to_ns( kt_now ) );
+
 		return HRTIMER_RESTART;
 	} else {
 		printk( "Timer Expired" );
@@ -45,7 +60,6 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer )
 int init_module( void )
 {
 	int i;
-	ktime_t ktime;
 
 	delay_in_ns = 1E6L;
 	num_events = 4;
@@ -60,9 +74,9 @@ int init_module( void )
 
 	printk( "HR Timer module initializing\n" );
 
-	ktime = ktime_set( 0, delay_in_ns );
 	hrtimer_init( &hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL );
 	hr_timer.function = &hrtimer_callback;
+	ktime_period_ns = ktime_set( 0, delay_in_ns );
 
 	// DEBUG	
 	//int test = hrtimer_is_hres_active( &hr_timer );	
@@ -70,7 +84,7 @@ int init_module( void )
 
 	printk( "Starting timer to callback in %dus\n", delay_in_ns );
 
-	hrtimer_start( &hr_timer, ktime, HRTIMER_MODE_REL );
+	hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
 	
 	// DEBUG
 	//getnstimeofday( &ts1 );
