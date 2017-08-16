@@ -20,11 +20,11 @@
 MODULE_LICENSE("GPL"); // Currently using the MIT license
 MODULE_AUTHOR("James Bruska");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
-MODULE_VERSION("0.3.0");
+MODULE_VERSION("0.3.1");
 
 static struct hrtimer hr_timer;
 static ktime_t ktime_period_ns;
-static int delay_in_ns, num_events, num_recordings, counter;
+static int delay_in_ns, num_events, num_recordings, counter, timer_restart;
 static int** hardware_events;
 static int Major;
 
@@ -44,7 +44,7 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
 	//printk( "delay: %ld\n", ts2.tv_nsec - old_time_ns);	
 	//printk( "%ld - \n%ld = \n%ld\n", ts2.tv_nsec, ts1.tv_nsec, ts2.tv_nsec - ts1.tv_nsec);
 
-	if ( counter <= 5 ) {
+	if ( timer_restart ) {
 		// DEBUG
 		printk( "counter: %d\n", counter );
 		/*for ( i=0; i < num_events; ++i){
@@ -66,60 +66,125 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
 }
 
 int open( struct inode *inode, struct file *fp ) {
-  printk( KERN_INFO "Inside open\n" );
-  return 0;
+	printk( KERN_INFO "Inside open\n" );
+	return 0;
 }
 
 int release( struct inode *inode, struct file *fp ) {
-  printk( KERN_INFO "Inside close\n" );
-  return 0;
+	printk( KERN_INFO "Inside close\n" );
+	return 0;
+}
+
+int start_counters() {
+	if ( !timer_restart ){
+		timer_restart = 1;
+		counter = 0;
+		ktime_period_ns = ktime_set( 0, delay_in_ns );
+		hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
+	} else {
+		printk( KERN_INFO "Invalid action: Counters already collecting\n" );
+	}
+
+	// DEBUG
+	//getnstimeofday( &ts1 );
+	
+	return 0;
+}
+
+int stop_counters() {
+	// DEBUG
+	/*int i, j;
+		for ( i=0; i < num_events; ++i ) {
+			for ( j=0; j < counter; ++j ) {
+				printk("%d ", hardware_events[i][j]);
+			}
+			printk("\n");
+	}*/
+
+	timer_restart = 0;
+
+	return 0;
 }
 
 #ifdef UNLOCKED
 
 long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) {
-  int ret = 0;
+	int ret = 0;
 
   switch( cmd ) {
-    case IOCTL_HELLO:
-      printk( KERN_INFO "Hello ioctl world" );
-      break;
-    default:
-      printk( KERN_INFO "Invalid command" );
-      break;
-  }
+		case IOCTL_DEFINE_COUNTERS:
+			printk( KERN_INFO "This will define the counters\n" );
+			break;
+		case IOCTL_START:
+			printk( KERN_INFO "Starting counters\n" );
+			start_counters();
+			break;
+		case IOCTL_STOP:
+			printk( KERN_INFO "Stopping counters\n" );
+			stop_counters();
+			break;
+		case IOCTL_DELETE_COUNTERS:
+			printk( KERN_INFO "This will delete the counters\n" );
+			break;
+		case IOCTL_DEBUG:
+			printk( KERN_INFO "This will set up debug mode\n" );
+			break;
+		case IOCTL_STATS:
+			printk( KERN_INFO "This will set up profiling mode\n" );
+			break;
+		default:
+			printk( KERN_INFO "Invalid command\n" );
+			break;
+	}
 
-  return ret;
+	return ret;
 }
 
 struct file_operations fops = {
-  open: open,
-  unlocked_ioctl: ioctl_funcs,
-  release: release
+	open: open,
+	unlocked_ioctl: ioctl_funcs,
+	release: release
 };
 
 #else
 
 int ioctl_funcs( struct inode *inode, struct file *fp,
                   unsigned int cmd, unsigned long arg ) {
-  int data = 10, ret;
+	int data = 10, ret;
 
-  switch( cmd ) {
-    case IOCTL_HELLO:
-      printk( KERN_INFO "Hello ioctl world" );
-      break;
-    default:
-      printk( KERN_INFO "Invalid command" );
-      break;
-  }
+	switch( cmd ) {
+		case IOCTL_DEFINE_COUNTERS:
+			printk( KERN_INFO "This will define the counters\n" );
+			break;
+		case IOCTL_START:
+			printk( KERN_INFO "Starting counters\n" );
+			start_counters();
+			break;
+		case IOCTL_STOP:
+			printk( KERN_INFO "Stopping counters\n" );
+			stop_counters();
+			break;
+		case IOCTL_DELETE_COUNTERS:
+			printk( KERN_INFO "This will delete the counters\n" );
+			break;
+		case IOCTL_DEBUG:
+			printk( KERN_INFO "This will set up debug mode\n" );
+			break;
+		case IOCTL_STATS:
+			printk( KERN_INFO "This will set up profiling mode\n" );
+			break;
+		default:
+			printk( KERN_INFO "Invalid command\n" );
+			break;
+	}
 
-  return ret;
+	return ret;
 }
 
 struct file_operations fops = {
-  open: open,
-  ioctl: ioctl_funcs,
-  release: release
+	open: open,
+	ioctl: ioctl_funcs,
+	release: release
 };
 
 #endif
@@ -146,10 +211,10 @@ int initialize_timer() {
 	printk( "Timer initializing\n" );
 	
 	counter = 0;
+	timer_restart = 0;
 
 	hrtimer_init( &hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL );
 	hr_timer.function = &hrtimer_callback;
-	ktime_period_ns = ktime_set( 0, delay_in_ns );
 	
 	return 0;
 }
@@ -165,7 +230,7 @@ int initialize_ioctl() {
   kernel_cdev->owner = THIS_MODULE;
 
   ret = alloc_chrdev_region( &dev_no, 0, 1, "char_arr_dev" );
-  if(ret < 0){
+  if( ret < 0 ){
     printk( "Major number allocation has failed\n" );
     return ret;
   }
@@ -199,31 +264,15 @@ int init_module( void ) {
 		return (-ENODEV); 
 	}
 
-	printk( "Starting timer to callback in %dns\n", delay_in_ns );
-
-	hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
-	
-	// DEBUG
-	//getnstimeofday( &ts1 );
+	printk( "Starting timer to callback in %dns\n", delay_in_ns );	
 
 	printk( "K-LEB module initialized\n" );
 	return 0;
 }
 
 int cleanup_memory() {
-	// DEBUG
-	//int i, j;
-	
 	printk( "Cleaning up memory\n" );
-
-	// DEBUG
-	/*for ( i=0; i < num_events; ++i ) {
-			for ( j=0; j < counter; ++j ) {
-				printk("%d ", hardware_events[i][j]);
-			}
-			printk("\n");
-	}*/
-
+	
 	kfree(hardware_events[0]);
 	kfree(hardware_events);
 

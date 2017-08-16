@@ -12,7 +12,7 @@ int main(){
 		exit(-1);
 	}
 
-	ioctl(fd, IOCTL_HELLO);
+	ioctl(fd, IOCTL_STOP);
 
 	close(fd);
 }
