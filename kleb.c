@@ -4,14 +4,14 @@
 #include <linux/ktime.h> // ktime representation
 #include <linux/math64.h> // div_u64
 #include <linux/slab.h> // kmalloc
-#include <linux/device.h>
-#include <linux/fs.h>
+#include <linux/device.h> // character devices
+#include <linux/fs.h> // file control
 #include <linux/cdev.h>
-#include <linux/version.h>
+#include <linux/version.h> // linux version
 #include <asm/uaccess.h>
 #include "kleb.h"
 
-#include <linux/kprobes.h>
+#include <linux/kprobes.h> // kprobe and jprobe
 
 // DEBUG
 #include <linux/time.h>
@@ -23,11 +23,12 @@
 MODULE_LICENSE("GPL"); // Currently using the MIT license
 MODULE_AUTHOR("James Bruska");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
-MODULE_VERSION("0.5.0");
+MODULE_VERSION("0.5.2");
 
 static struct hrtimer hr_timer;
 static ktime_t ktime_period_ns;
 static int delay_in_ns, num_events, num_recordings, counter, timer_restart;
+static int target_pid, recording;
 static int** hardware_events;
 static int Major;
 
@@ -39,17 +40,9 @@ struct cdev *kernel_cdev;
 
 
 
-#define DEBUG
-#ifdef DEBUG
-	#define printk_d(...) printk(KERN_INFO "lprof: " __VA_ARGS__)
-#else
-	#define printk_d(...)
-#endif // DEBUG
 
-#define DO_EXIT_NAME "do_exit"
-#define COPY_PROCESS_NAME "copy_process"
-#define UPROBE_COPY_PROCESS_NAME "uprobe_copy_process"
-#define FINISH_TASK_SWITCH_NAME "finish_task_switch"
+
+
 
 int kprobes_handle_do_exit(struct kprobe* p, struct pt_regs* regs)
 {
@@ -69,9 +62,36 @@ int kprobes_handle_copy_process(struct kprobe* p, struct pt_regs* regs)
 
 struct rq* jprobes_handle_finish_task_switch(struct task_struct* prev)
 {
-	if ( timer_restart ){
+	int i;
+	
+	/*if ( timer_restart && ( (current->pid == target_pid) || (prev->pid == target_pid) ) ){
   	printk_d("In jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
-  }
+  }*/
+	
+	if ( recording && ( counter < num_recordings ) ) { // TODO: rm 2nd cond
+		if ( current->pid == target_pid ) { // TODO: timer restart always bug
+			timer_restart = 1;
+			ktime_period_ns = ktime_set( 0, delay_in_ns );
+			hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
+  		printk_d("Timer in: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
+			if ( counter < num_recordings ) {	
+				for ( i=0; i < num_events; ++i ) {
+					hardware_events[i][counter] = -2; 
+  			}
+				hardware_events[num_events][counter] = 2;
+				++counter;
+			}
+		} else if ( prev->pid == target_pid ) {
+			timer_restart = 0; // TODO: Maybe change to timer_cancel?
+			printk_d("Timer out: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
+			for ( i=0; i < num_events; ++i ) {
+				hardware_events[i][counter] = -3; 
+  		}
+			hardware_events[num_events][counter] = 3;
+			++counter;
+		}
+	}
+
 	jprobe_return();
   //should not get here
   return (NULL);
@@ -188,7 +208,7 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
 	int overrun;	
 
 	// DEBUG
-	//int i;
+	int i;
 	//long int old_time_ns = ts2.tv_nsec;
 	//getnstimeofday( &ts2 );
 	//printk( "delay: %ld\n", ts2.tv_nsec - old_time_ns);	
@@ -197,9 +217,14 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
 	if ( timer_restart ) {
 		// DEBUG
 		printk( "counter: %d\n", counter );
-		/*for ( i=0; i < num_events; ++i){
-			hardware_events[i][counter] = i;
-		}*/
+		for ( i=0; i < num_events; ++i){
+			if (counter < num_recordings){
+				//printk( KERN_INFO "i = %d\n", i ); 
+				hardware_events[i][counter] = i+counter*10; 
+				//printk( KERN_INFO "he[i][counter] = %d\n", hardware_events[i][counter] ); 
+			}
+		}
+		hardware_events[num_events+1][counter] = 0;
 
 		++counter;
 		kt_now = hrtimer_cb_get_time( &hr_timer );
@@ -222,7 +247,8 @@ int open( struct inode *inode, struct file *fp ) {
 
 ssize_t read( struct file *filep, char *buffer, 
                    size_t len, loff_t *offset ) {
-	int size_of_message = num_recordings * num_events;
+	//int size_of_message = num_recordings * (num_events+1) * sizeof(int);
+	int size_of_message = num_recordings * (num_events+1) * sizeof(int);
 	int error_count = copy_to_user( buffer, hardware_events[0], 
                                    size_of_message );
 
@@ -242,6 +268,7 @@ int release( struct inode *inode, struct file *fp ) {
 
 int start_counters() {
 	if ( !timer_restart ){
+		recording = 1;
 		timer_restart = 1;
 		counter = 0;
 		ktime_period_ns = ktime_set( 0, delay_in_ns );
@@ -268,6 +295,7 @@ int stop_counters() {
 		printk("\n");
 	}*/
 
+	recording  = 0;
 	timer_restart = 0;
 
 	return 0;
@@ -278,12 +306,16 @@ int stop_counters() {
 long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) {
 	int ret = 0;
 
+	//printk(KERN_INFO "This is my msg: %s\n", (char *)arg );
+
   switch( cmd ) {
 		case IOCTL_DEFINE_COUNTERS:
 			printk( KERN_INFO "This will define the counters\n" );
 			break;
 		case IOCTL_START:
 			printk( KERN_INFO "Starting counters\n" );
+			target_pid = arg;
+			printk( KERN_INFO "target pid: %d\n", (int) arg );
 			start_counters();
 			break;
 		case IOCTL_STOP:
@@ -314,7 +346,7 @@ struct file_operations fops = {
 	release: release
 };
 
-#else
+#else // TODO: Fix this to match the upper one
 
 int ioctl_funcs( struct inode *inode, struct file *fp,
                   unsigned int cmd, unsigned long arg ) {
@@ -363,13 +395,13 @@ int initialize_memory() {
 	
 	printk( "Memory initializing\n" );
 	
-	delay_in_ns = 1E7L;
+	delay_in_ns = 1E6L;
 	num_events = 4;
 	num_recordings = div_u64(1E8L, delay_in_ns); // Holds 100ms worth of data
 	
-	hardware_events = kmalloc( num_events*sizeof(int *), GFP_ATOMIC );
-	hardware_events[0] = kmalloc( num_recordings*sizeof(int), GFP_ATOMIC );
-	for ( i=0; i < num_events; ++i ) { // This reduces the number of kmalloc calls
+	hardware_events = kmalloc( (num_events+1)*sizeof(int *), GFP_ATOMIC );
+	hardware_events[0] = kmalloc( (num_events+1)*num_recordings*sizeof(int), GFP_ATOMIC );
+	for ( i=0; i < (num_events+1); ++i ) { // This reduces the number of kmalloc calls
 		hardware_events[i] = *hardware_events + num_recordings * i;
 	}
 	
@@ -448,7 +480,7 @@ int init_module( void ) {
 }
 
 int cleanup_memory() {
-	printk( "Cleaning up memory\n" );
+	printk( "Memory cleaning up\n" );
 	
 	kfree(hardware_events[0]);
 	kfree(hardware_events);
@@ -459,7 +491,7 @@ int cleanup_memory() {
 int cleanup_timer() {
 	int ret;
 	
-	printk( "Cleaning up timer\n" );
+	printk( "Timer cleaning up\n" );
 
 	ret = hrtimer_cancel( &hr_timer );
 	if ( ret ) printk( "The timer was still in use...\n" );
@@ -468,7 +500,7 @@ int cleanup_timer() {
 }
 
 int cleanup_ioctl() {
-	printk( "Cleaning up IOCTL\n" );
+	printk( "IOCTL cleaning up\n" );
 
 	cdev_del(kernel_cdev);
   unregister_chrdev_region(Major, 1);	
