@@ -23,7 +23,7 @@
 MODULE_LICENSE("GPL"); // Currently using the MIT license
 MODULE_AUTHOR("James Bruska");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
-MODULE_VERSION("0.5.2");
+MODULE_VERSION("0.5.3");
 
 static struct hrtimer hr_timer;
 static ktime_t ktime_period_ns;
@@ -69,7 +69,7 @@ struct rq* jprobes_handle_finish_task_switch(struct task_struct* prev)
   }*/
 	
 	if ( recording && ( counter < num_recordings ) ) { // TODO: rm 2nd cond
-		if ( current->pid == target_pid ) { // TODO: timer restart always bug
+		if ( current->pid == target_pid ) { 
 			timer_restart = 1;
 			ktime_period_ns = ktime_set( 0, delay_in_ns );
 			hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
@@ -82,7 +82,8 @@ struct rq* jprobes_handle_finish_task_switch(struct task_struct* prev)
 				++counter;
 			}
 		} else if ( prev->pid == target_pid ) {
-			timer_restart = 0; // TODO: Maybe change to timer_cancel?
+			timer_restart = 0; 
+			hrtimer_cancel( &hr_timer ); // Needed?
 			printk_d("Timer out: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
 			for ( i=0; i < num_events; ++i ) {
 				hardware_events[i][counter] = -3; 
