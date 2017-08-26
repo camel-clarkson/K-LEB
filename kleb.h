@@ -21,6 +21,13 @@ typedef struct {
 	unsigned long long config;
 } kleb_ioctl_args_t;
 
+typedef struct _lprof_cmd_t
+{
+  unsigned int pid;
+  unsigned int counter;
+  unsigned long long config; 
+} lprof_cmd_t;
+
 int initialize_memory( void );
 int initialize_timer( void );
 int initialize_ioctl( void );

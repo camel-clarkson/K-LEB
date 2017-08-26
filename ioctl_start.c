@@ -12,12 +12,18 @@ int main(){
 		exit(-1);
 	}
 
+	lprof_cmd_t lprof_cmd;
+	lprof_cmd.pid = getpid();
+	lprof_cmd.counter = 0x020b;
+	lprof_cmd.config = 0;
+
 	char *msg = "Starting stuff";
-	ioctl(fd, IOCTL_START, getpid());
+	ioctl(fd, IOCTL_START, &lprof_cmd);
 	printf("my pid: %d\n", getpid());
 
 	int i = 0;
 	//while(i<1000000000){ ++i; }
+	//while(i<100000000){ ++i; }
 	while(i<10000000){ ++i; }
 
 	close(fd);

@@ -9,9 +9,6 @@
 #include <linux/cdev.h>
 #include <linux/version.h> // linux version
 #include <asm/uaccess.h>
-#include <asm/nmi.h> // reserve_perfctr_nmi ...
-#include <asm/perf_event.h> // union cpuid10...
-#include <asm/special_insns.h> // read and write cr4
 #include "kleb.h"
 
 #include <linux/kprobes.h> // kprobe and jprobe
@@ -26,7 +23,7 @@
 MODULE_LICENSE("GPL"); // Currently using the MIT license
 MODULE_AUTHOR("James Bruska");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
-MODULE_VERSION("0.6.0");
+MODULE_VERSION("0.5.3");
 
 static struct hrtimer hr_timer;
 static ktime_t ktime_period_ns;
@@ -39,156 +36,6 @@ struct cdev *kernel_cdev;
 
 //DEBUG
 //static struct timespec ts1, ts2;
-
-
-
-
-
-
-
-unsigned long rdpmc_instructions(void)
-{
-	unsigned a, d, c;
-
-	c = (1<<30)+1;
-	__asm__ volatile( "rdpmc" : "=a" (a), "=d" (d) : "c" (c) );
-
-	return ((unsigned long) a) | (((unsigned long) d) << 32);;
-}
-
-unsigned long start_rdpmc_ins, stop_rdpmc_ins;
-long int count_in;
-
-static long pmu_start_counters1(unsigned int counter, unsigned long long config)
-{
-	int reg_addr=0x186; // 0x186 is perfeventsel0
-	int event_no=0x4f2e; 
-	int umask=0x3F00; 
-	int enable_bits=0x430000; 
-	int event=event_no | umask | enable_bits;
-
-    long int eax_low, edx_high;
-    int reg_addr_val = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
-
-	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event), "d"(0x00));
-
-	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
-    count_in = ((long int)eax_low | (long int)edx_high<<32);
-}
-
-static long pmu_stop_counters1(unsigned int counter, unsigned long long config)
-{
-	long int count;
-    long int eax_low, edx_high;
-    int reg_addr = 0xc1; //MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0 
-
-    __asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr));
-    count = ((long int)eax_low | (long int)edx_high<<32);
-
-	printk( KERN_INFO "rdmsr in:   %ld", count_in);
-	printk( KERN_INFO "rdmsr out:  %ld", count);
-	printk( KERN_INFO "rdmsr diff: %ld", count - count_in);
-
-    return count;
-}
-
-static long pmu_start_counters(unsigned int counter, unsigned long long config)
-{
-	unsigned long long pgc;
-
-	printk( "pmu start - 1\n" );
-
-	//Reserve PCMx
-    if (!reserve_perfctr_nmi(MSR_ARCH_PERFMON_PERFCTR0 + counter))
-    {   
-      return (-EBUSY);
-    }   
-
-    //Reserve PerfEvtSelx
-    if (!reserve_evntsel_nmi(MSR_ARCH_PERFMON_EVENTSEL0 + counter))
-    {   
-      release_perfctr_nmi(MSR_ARCH_PERFMON_PERFCTR0 + counter);
-      return (-EBUSY);
-    }
-
-	//Ensure counter is NON-OS and enabled
-  config = 0xFFFFFFFF &
-           (ARCH_PERFMON_EVENTSEL_ENABLE | //Require ENABLE
-             (config & ~(ARCH_PERFMON_EVENTSEL_PIN_CONTROL |
-                         ARCH_PERFMON_EVENTSEL_INT |
-                         ARCH_PERFMON_EVENTSEL_ANY)
-             )
-           ); //Disallow PC, INT and ANY for security reasons
-
-	printk( "pmu start - 2\n" );
-
-	// DEBUG
-	//unsigned long long val;
-	//rdmsr(MSR_ARCH_PERFMON_PERFCTR0 + counter, val);
-	//printk( "msr: %lld\n", val );
-	
-
-  //Reset counter
-  wrmsr(MSR_ARCH_PERFMON_PERFCTR0 + counter, 0, 0);
-  //Configure Counter
-  wrmsr(MSR_ARCH_PERFMON_EVENTSEL0 + counter, config, 0);
-  //Clear a possible counter overflow
-  wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, 1 << counter);
-
-	printk( "pmu start - 3\n" );
-
-  rdmsrl(MSR_CORE_PERF_GLOBAL_CTRL, pgc);
-  pgc |= 1 << counter;
-  wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL, pgc);
-	
-	long int eax_low, edx_high;
-    int reg_addr=0xC1; 
-    __asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr));
-    long long unsigned count = ((long int)eax_low | (long int)edx_high<<32);
-	printk( "msr: %lld\n", count );
-	
-	printk( "pgc (start): %lld\n", pgc );
-	//start_rdpmc_ins = rdpmc_instructions();
-	//printk( "rdpmc (start): %ld\n", start_rdpmc_ins );
-
-  return (0);
-
-}
-
-static long pmu_stop_counters(unsigned int counter, unsigned long long config)
-{
-  unsigned long long pgc;
-
-  config &= ~ARCH_PERFMON_EVENTSEL_ENABLE;
-  wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + counter, config);
-
-  rdmsrl(MSR_CORE_PERF_GLOBAL_CTRL, pgc);
-  pgc &= ~(1 << counter);
-  wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL, pgc);
-	
-	printk( "pgc (stop): %lld\n", pgc );
-	
-	long int eax_low, edx_high;
-    int reg_addr=0xC1; 
-    __asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr));
-    long long unsigned count = ((long int)eax_low | (long int)edx_high<<32);
-	printk( "msr: %lld\n", count );
-	
-	//stop_rdpmc_ins = rdpmc_instructions();	
-	//printk( "rdpmc (stop): %ld\n", stop_rdpmc_ins );
-	//printk( "rdpmc (diff): %ld\n", stop_rdpmc_ins - start_rdpmc_ins );
-
-  //FIXME: Deal with the local lp_info
-   
-  //Release resources back to kernel
-  release_perfctr_nmi(MSR_ARCH_PERFMON_PERFCTR0 + counter);
-  release_evntsel_nmi(MSR_ARCH_PERFMON_EVENTSEL0 + counter);
-
-  return (0);
-}
-
-
-
 
 
 
@@ -229,9 +76,9 @@ struct rq* jprobes_handle_finish_task_switch(struct task_struct* prev)
   		printk_d("Timer in: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
 			if ( counter < num_recordings ) {	
 				for ( i=0; i < num_events; ++i ) {
-					// hardware_events[i][counter] = -2; 
+					hardware_events[i][counter] = -2; 
   			}
-				// hardware_events[num_events][counter] = 2;
+				hardware_events[num_events][counter] = 2;
 				++counter;
 			}
 		} else if ( prev->pid == target_pid ) {
@@ -239,9 +86,9 @@ struct rq* jprobes_handle_finish_task_switch(struct task_struct* prev)
 			hrtimer_cancel( &hr_timer ); // Needed?
 			printk_d("Timer out: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
 			for ( i=0; i < num_events; ++i ) {
-				// hardware_events[i][counter] = -3; 
+				hardware_events[i][counter] = -3; 
   		}
-			// hardware_events[num_events][counter] = 3;
+			hardware_events[num_events][counter] = 3;
 			++counter;
 		}
 	}
@@ -374,11 +221,11 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
 		for ( i=0; i < num_events; ++i){
 			if (counter < num_recordings){
 				//printk( KERN_INFO "i = %d\n", i ); 
-				// hardware_events[i][counter] = i+counter*10; 
+				hardware_events[i][counter] = i+counter*10; 
 				//printk( KERN_INFO "he[i][counter] = %d\n", hardware_events[i][counter] ); 
 			}
 		}
-		// hardware_events[num_events+1][counter] = 0;
+		hardware_events[num_events+1][counter] = 0;
 
 		++counter;
 		kt_now = hrtimer_cb_get_time( &hr_timer );
@@ -421,13 +268,12 @@ int release( struct inode *inode, struct file *fp ) {
 }
 
 int start_counters() {
-	if ( !recording ){
+	if ( !timer_restart ){
 		recording = 1;
 		timer_restart = 1;
 		counter = 0;
-		// TODO: Remove (these add extra counts which are not wanted)
-		//ktime_period_ns = ktime_set( 0, delay_in_ns );
-		//hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
+		ktime_period_ns = ktime_set( 0, delay_in_ns );
+		hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
 	} else {
 		printk( KERN_INFO "Invalid action: Counters already collecting\n" );
 	}
@@ -450,7 +296,7 @@ int stop_counters() {
 		printk("\n");
 	}*/
 
-	recording = 0;
+	recording  = 0;
 	timer_restart = 0;
 
 	return 0;
@@ -463,49 +309,19 @@ long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) {
 
 	//printk(KERN_INFO "This is my msg: %s\n", (char *)arg );
 
-
-
-
-
-
-  lprof_cmd_t* lprof_cmd_user = (lprof_cmd_t*)(arg);
-  lprof_cmd_t lprof_cmd;
-
-  if (lprof_cmd_user == NULL)
-  { 
-    printk_d("lprof_ioctl: User did not pass in cmd\n");
-    return (-EINVAL);
-  }
-
-  //copy the values from userspace
-  if (copy_from_user(&lprof_cmd, lprof_cmd_user, sizeof(lprof_cmd_t)) != 0)
-  {
-    printk_d("lprof_ioctl: Could not copy cmd from userspace\n");
-    return (-EINVAL);
-  }
-
-
-
-
-
-
-	switch( cmd ) {
+  switch( cmd ) {
 		case IOCTL_DEFINE_COUNTERS:
 			printk( KERN_INFO "This will define the counters\n" );
 			break;
 		case IOCTL_START:
 			printk( KERN_INFO "Starting counters\n" );
-			target_pid = lprof_cmd.pid;
-			printk( KERN_INFO "target pid: %d\n", (int) target_pid );
+			target_pid = arg;
+			printk( KERN_INFO "target pid: %d\n", (int) arg );
 			start_counters();
-			//pmu_start_counters(lprof_cmd.counter, lprof_cmd.config);
-			pmu_start_counters1(lprof_cmd.counter, lprof_cmd.config);
 			break;
 		case IOCTL_STOP:
 			printk( KERN_INFO "Stopping counters\n" );
 			stop_counters();
-			//pmu_stop_counters(lprof_cmd.counter, lprof_cmd.config);
-			pmu_stop_counters1(lprof_cmd.counter, lprof_cmd.config);
 			break;
 		case IOCTL_DELETE_COUNTERS:
 			printk( KERN_INFO "This will delete the counters\n" );
