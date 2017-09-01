@@ -34,8 +34,10 @@ static int delay_in_ns, num_events, num_recordings, counter, timer_restart;
 static int target_pid, recording;
 static int** hardware_events;
 static int Major;
+static lprof_cmd_t lprof_cmd;
 
 struct cdev *kernel_cdev;
+
 
 //DEBUG
 //static struct timespec ts1, ts2;
@@ -61,19 +63,32 @@ long int count_in;
 
 static long pmu_start_counters1(unsigned int counter, unsigned long long config)
 {
-	int reg_addr=0x186; // 0x186 is perfeventsel0
-	int event_no=0x4f2e; 
-	int umask=0x3F00; 
-	int enable_bits=0x430000; 
+	int reg_addr = 0x186; // 0x186 is perfeventsel0
+	//int event_no=0x4f2e; 
+	//int event_no=0x412e; 
+	//int event_no=0xc0; 
+	int event_no = counter;
+	int umask = 0x3F00; 
+	int enable_bits = 0x430000; 
 	int event=event_no | umask | enable_bits;
 
     long int eax_low, edx_high;
     int reg_addr_val = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
 
+	// DEBUG
+	printk( "event: %d", event_no);
+
 	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event), "d"(0x00));
 
+	__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(0x00), "d"(0x00));
 	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
     count_in = ((long int)eax_low | (long int)edx_high<<32);
+	printk( KERN_INFO "rdmsr in:   %ld", count_in);
+	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+    count_in = ((long int)eax_low | (long int)edx_high<<32);
+	printk( KERN_INFO "rdmsr in:   %ld", count_in);
+
+	return count_in;
 }
 
 static long pmu_stop_counters1(unsigned int counter, unsigned long long config)
@@ -89,6 +104,40 @@ static long pmu_stop_counters1(unsigned int counter, unsigned long long config)
 	printk( KERN_INFO "rdmsr out:  %ld", count);
 	printk( KERN_INFO "rdmsr diff: %ld", count - count_in);
 
+    return count;
+}
+
+static long pmu_reset_counters1(unsigned int counter, unsigned long long config)
+{
+    long int eax_low, edx_high;
+    int reg_addr_val = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
+
+	__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(0x00), "d"(0x00));
+	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+    count_in = ((long int)eax_low | (long int)edx_high<<32);
+	printk( KERN_INFO "rdmsr reset:   %ld", count_in);
+	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+    count_in = ((long int)eax_low | (long int)edx_high<<32);
+	printk( KERN_INFO "rdmsr reset:   %ld", count_in);
+
+	return count_in;
+}
+
+static long pmu_read_counters1( void )
+{
+	long int count;
+    long int eax_low, edx_high;
+    int reg_addr = 0xc1; //MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0 
+
+    __asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr));
+    count = ((long int)eax_low | (long int)edx_high<<32);
+
+	printk( KERN_INFO "rdmsr read:   %ld\n", count);
+	hardware_events[0][counter] = count; 
+	printk( KERN_INFO "he[i][counter] = %d\n", hardware_events[0][counter] ); 
+	
+	hardware_events[num_events][counter] = 0;
+		
     return count;
 }
 
@@ -229,20 +278,22 @@ struct rq* jprobes_handle_finish_task_switch(struct task_struct* prev)
   		printk_d("Timer in: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
 			if ( counter < num_recordings ) {	
 				for ( i=0; i < num_events; ++i ) {
-					// hardware_events[i][counter] = -2; 
+					 hardware_events[i][counter] = -2; 
   			}
-				// hardware_events[num_events][counter] = 2;
+				hardware_events[num_events][counter] = 2;
 				++counter;
-			}
+			}	
+			pmu_reset_counters1(lprof_cmd.counter, lprof_cmd.config);
 		} else if ( prev->pid == target_pid ) {
 			timer_restart = 0; 
 			hrtimer_cancel( &hr_timer ); // Needed?
 			printk_d("Timer out: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
 			for ( i=0; i < num_events; ++i ) {
-				// hardware_events[i][counter] = -3; 
-  		}
-			// hardware_events[num_events][counter] = 3;
+				 hardware_events[i][counter] = -3; 
+  			}
+			hardware_events[num_events][counter] = 3;
 			++counter;
+			pmu_stop_counters1(lprof_cmd.counter, lprof_cmd.config);
 		}
 	}
 
@@ -362,23 +413,31 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
 	int overrun;	
 
 	// DEBUG
-	int i;
+	//int i;
 	//long int old_time_ns = ts2.tv_nsec;
 	//getnstimeofday( &ts2 );
 	//printk( "delay: %ld\n", ts2.tv_nsec - old_time_ns);	
 	//printk( "%ld - \n%ld = \n%ld\n", ts2.tv_nsec, ts1.tv_nsec, ts2.tv_nsec - ts1.tv_nsec);
 
-	if ( timer_restart ) {
+	if ( timer_restart && (counter < num_recordings) ) {
 		// DEBUG
 		printk( "counter: %d\n", counter );
-		for ( i=0; i < num_events; ++i){
+		/*for ( i=0; i < num_events; ++i){
 			if (counter < num_recordings){
-				//printk( KERN_INFO "i = %d\n", i ); 
-				// hardware_events[i][counter] = i+counter*10; 
-				//printk( KERN_INFO "he[i][counter] = %d\n", hardware_events[i][counter] ); 
+				printk( KERN_INFO "i = %d\n", i ); 
+				hardware_events[i][counter] = i+counter*10; 
+				printk( KERN_INFO "he[i][counter] = %d\n", hardware_events[i][counter] ); 
 			}
 		}
-		// hardware_events[num_events+1][counter] = 0;
+		hardware_events[num_events][counter] = 0;
+		*/		
+
+		pmu_read_counters1();
+
+		// DEBUG
+		//long int old_time_ns = ts2.tv_nsec;
+		//getnstimeofday( &ts2 );
+		//printk( "delay: %ld\n", ts2.tv_nsec - old_time_ns);
 
 		++counter;
 		kt_now = hrtimer_cb_get_time( &hr_timer );
@@ -389,7 +448,11 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
 
 		return HRTIMER_RESTART;
 	} else {
-		printk( "Timer Expired" );
+		if ( !timer_restart ) {
+			printk( "Timer Expired\n" );
+		} else {
+			printk( "Counter > allowed spaces: %d > %d\n", counter, num_recordings );
+		}
 		return HRTIMER_NORESTART;
 	}
 }
@@ -421,13 +484,19 @@ int release( struct inode *inode, struct file *fp ) {
 }
 
 int start_counters() {
+	int i, j;
+
 	if ( !recording ){
 		recording = 1;
 		timer_restart = 1;
 		counter = 0;
 		// TODO: Remove (these add extra counts which are not wanted)
 		//ktime_period_ns = ktime_set( 0, delay_in_ns );
-		//hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
+		for ( i=0; i < (num_events+1); ++i ) { // reset values
+			for ( j=0; j < num_recordings; ++j ) {
+				hardware_events[i][j] = -420;
+			}
+		}//hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
 	} else {
 		printk( KERN_INFO "Invalid action: Counters already collecting\n" );
 	}
@@ -469,7 +538,6 @@ long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) {
 
 
   lprof_cmd_t* lprof_cmd_user = (lprof_cmd_t*)(arg);
-  lprof_cmd_t lprof_cmd;
 
   if (lprof_cmd_user == NULL)
   { 
@@ -505,7 +573,7 @@ long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) {
 			printk( KERN_INFO "Stopping counters\n" );
 			stop_counters();
 			//pmu_stop_counters(lprof_cmd.counter, lprof_cmd.config);
-			pmu_stop_counters1(lprof_cmd.counter, lprof_cmd.config);
+			//pmu_stop_counters1(lprof_cmd.counter, lprof_cmd.config);
 			break;
 		case IOCTL_DELETE_COUNTERS:
 			printk( KERN_INFO "This will delete the counters\n" );
@@ -576,7 +644,7 @@ struct file_operations fops = {
 #endif
 
 int initialize_memory() {
-	int i;
+	int i, j;
 	
 	printk( "Memory initializing\n" );
 	
@@ -584,10 +652,13 @@ int initialize_memory() {
 	num_events = 4;
 	num_recordings = div_u64(1E8L, delay_in_ns); // Holds 100ms worth of data
 	
-	hardware_events = kmalloc( (num_events+1)*sizeof(int *), GFP_ATOMIC );
-	hardware_events[0] = kmalloc( (num_events+1)*num_recordings*sizeof(int), GFP_ATOMIC );
+	hardware_events = kmalloc( (num_events+1)*sizeof(int *), GFP_KERNEL );
+	hardware_events[0] = kmalloc( (num_events+1)*num_recordings*sizeof(int), GFP_KERNEL );
 	for ( i=0; i < (num_events+1); ++i ) { // This reduces the number of kmalloc calls
 		hardware_events[i] = *hardware_events + num_recordings * i;
+		for ( j=0; j < num_recordings; ++j ) {
+			hardware_events[i][j] = -420;
+		}
 	}
 	
 	return 0;
