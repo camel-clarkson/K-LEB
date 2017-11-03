@@ -38,7 +38,7 @@ int main(){
 		//for ( j=0; j < 10; ++j ) {
 			printf("%d ", hardware_events[i][j]); 
 		}
-		printf("\n");
+		printf("\n\n");
 	}
 	printf("\n");
   //printf("The received message is: [%s]\n", receive);

@@ -16,7 +16,7 @@ int main(){
 	lprof_cmd.pid = getpid();
 	//lprof_cmd.counter = 0x020b;
 	//lprof_cmd.counter = 0x412e;
-	lprof_cmd.counter = 0xc0;
+	lprof_cmd.counter = 0xc1;
 	lprof_cmd.config = 0;
 
 	char *msg = "Starting stuff";
@@ -25,9 +25,9 @@ int main(){
 
 	int i = 0;
 	//while(i<1000000000){ ++i; }
-	while(i<100000000){ ++i; }
+	//while(i<100000000){ ++i; }
 	//while(i<10000000){ ++i; }
-	//while(i<5000000){ ++i; }
+	while(i<2000000){ ++i; }
 
 	close(fd);
 }

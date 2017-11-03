@@ -32,7 +32,7 @@ int initialize_memory( void );
 int initialize_timer( void );
 int initialize_ioctl( void );
 
-int start_counters( void );
+int start_counters( unsigned int pmu_counter, unsigned long long pmu_config );
 int stop_counters( void );
 
 int cleanup_memory( void );
