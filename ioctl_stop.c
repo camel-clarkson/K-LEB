@@ -6,6 +6,10 @@
 #include <sys/ioctl.h>
 #include "kleb.h"
 
+#include "time.h"
+#include "stdint.h"
+#define BILLION 1000000000L
+
 int main(){
 	int fd = open("/dev/temp", O_RDWR);
 	if(fd == -1){
@@ -13,10 +17,13 @@ int main(){
 		exit(-1);
 	}
 
+	//struct timespec start, end;
+	//clock_gettime(CLOCK_MONOTONIC, &start);
+
 	ioctl(fd, IOCTL_STOP, "Stopping stuff");
 
-	int num_events = 4;
-	int num_recordings = 100;
+	int num_events = 7;
+	int num_recordings = 500;
 	int **hardware_events = malloc( (num_events+1)*sizeof(int *) );
 	hardware_events[0] = malloc( (num_events+1)*num_recordings*sizeof(int) );
 	
@@ -32,16 +39,38 @@ int main(){
     return errno;
   } 
 
+	FILE *fp = fopen("../LR_v13_tfdeploy/input.csv", "a");
+	fprintf(stdout, "1,foo,\n");
 	int j;
-	for ( i=0; i < (num_events+1); ++i ) { 
-		for ( j=0; j < num_recordings; ++j ) {
-		//for ( j=0; j < 10; ++j ) {
-			printf("%d ", hardware_events[i][j]); 
+	//for ( j=0; j < 100; ++j ) {
+	for ( j=0; j < num_recordings; ++j ) {
+		for ( i=0; i < (num_events+1); ++i ) { 
+			fprintf(stdout, "%d,", hardware_events[i][j]); 
 		}
-		printf("\n\n");
+		fprintf(stdout, "\n"); 
 	}
-	printf("\n");
-  //printf("The received message is: [%s]\n", receive);
+	fprintf(stdout, "\n");
+
+//	for ( j=0; j < 50; ++j ) {
+//		for ( i=0; i < 1; ++i ) { 
+//  			fprintf(stdout, "%d ", hardware_events[i][j]); 
+//		}
+//		fprintf(stdout, "\n");
+//	}
+//	fprintf(stdout, "\n");
+
+//	printf("The received message is: [%s]\n", receive);
 
 	close(fd);
+
+	//system("./python_test");
+	//chdir("../LR_v13_tfdeploy");
+  //system("su bruskajp -c \"python3 lr_script_OC_testing_only_2.py\"");
+	
+	//clock_gettime(CLOCK_MONOTONIC, &end);
+	//uint64_t diff1 = BILLION * (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec);
+	//fprintf(stdout, "elapsed time = %llu nanoseconds\n", (long long unsigned int) diff1);
+
 }
+
+

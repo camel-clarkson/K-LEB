@@ -18,8 +18,8 @@ kleb_module:
 ioctl_start: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $<
 
-ioctl_stop: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $<
+#ioctl_stop: $(OBJS)
+#	$(CC) $(CFLAGS) -o $@ $<
 
 .PHONY: clean
 clean: kleb_module_clean ioctl_start_clean ioctl_stop_clean

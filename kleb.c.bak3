@@ -36,14 +36,11 @@ static int** hardware_events;
 static int Major;
 static lprof_cmd_t lprof_cmd;
 
-static int reg_addr, reg_addr_val, event_num, umask, enable_bits, disable_bits, event_on, event_off;
-static long int eax_low, edx_high;
-
 struct cdev *kernel_cdev;
 
 
 //DEBUG
-static struct timespec ts1, ts2, ts3, ts4;
+static struct timespec ts1, ts2;
 
 
 
@@ -66,28 +63,30 @@ long int count_in;
 
 static long pmu_start_counters(unsigned int counter, unsigned long long config)
 {
-	reg_addr = 0x186; // 0x186 is perfeventsel0
-	//int event_num = 0x4f2e; 
-	//int event_num = 0x412e; 
-	//int event_num = 0xc0; 
-	event_num = counter;
-	umask = 0x3F00; 
-	enable_bits = 0x430000;
-	disable_bits = 0x130000;
-	event_on = event_num | umask | enable_bits;
-	event_off = event_num | umask | disable_bits; 
+	int reg_addr = 0x186; // 0x186 is perfeventsel0
+	//int event_no=0x4f2e; 
+	//int event_no=0x412e; 
+	//int event_no=0xc0; 
+	int event_no = counter;
+	int umask = 0x3F00; 
+	int enable_bits = 0x430000; 
+	int event=event_no | umask | enable_bits;
 
-	reg_addr_val = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
+    long int eax_low, edx_high;
+    int reg_addr_val = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
 
 	// DEBUG
-	//printk( "event: %d", event_num);
+	//printk( "event: %d", event_no);
 	getnstimeofday( &ts1 );
 
-	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_off), "d"(0x00));
+	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event), "d"(0x00));
 
 	__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(0x00), "d"(0x00));
 	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
-  count_in = ((long int)eax_low | (long int)edx_high<<32);
+    count_in = ((long int)eax_low | (long int)edx_high<<32);
+	//printk( KERN_INFO "rdmsr in:   %ld", count_in);
+	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+    count_in = ((long int)eax_low | (long int)edx_high<<32);
 	//printk( KERN_INFO "rdmsr in:   %ld", count_in);
 
 	return count_in;
@@ -96,11 +95,11 @@ static long pmu_start_counters(unsigned int counter, unsigned long long config)
 static long pmu_stop_counters( void )
 {
 	long int count;
-	
-	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_off), "d"(0x00));
+    long int eax_low, edx_high;
+    int reg_addr = 0xc1; //MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0 
 
-	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
-	count = ((long int)eax_low | (long int)edx_high<<32);
+    __asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr));
+    count = ((long int)eax_low | (long int)edx_high<<32);
 
 	printk( KERN_INFO "rdmsr in:   %ld", count_in);
 	printk( KERN_INFO "rdmsr out:  %ld", count);
@@ -111,41 +110,42 @@ static long pmu_stop_counters( void )
 	getnstimeofday( &ts2 );
 	printk( "%ld - \n%ld = \n%ld\n", ts2.tv_nsec, ts1.tv_nsec, ts2.tv_nsec - ts1.tv_nsec);
 
-	return count;
+
+    return count;
 }
 
-static long pmu_restart_counters( void )//unsigned int counter, unsigned long long config)
+static long pmu_reset_counters1(unsigned int counter, unsigned long long config)
 {
-	edx_high = 0x00;
-	eax_low = hardware_events[0][counter-2];
-	
-	__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
+    long int eax_low, edx_high;
+    int reg_addr_val = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
+
+	__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(0x00), "d"(0x00));
 	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+    count_in = ((long int)eax_low | (long int)edx_high<<32);
+	//printk( KERN_INFO "rdmsr reset:   %ld", count_in);
+	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+    count_in = ((long int)eax_low | (long int)edx_high<<32);
 	//printk( KERN_INFO "rdmsr reset:   %ld", count_in);
 
-	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_on), "d"(0x00));
-	
-	return reg_addr_val;
+	return count_in;
 }
 
 static long pmu_read_counters1( void )
 {
 	long int count;
+    long int eax_low, edx_high;
+    int reg_addr = 0xc1; //MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0 
 
-	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
-	count = ((long int)eax_low | (long int)edx_high<<32);
+    __asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr));
+    count = ((long int)eax_low | (long int)edx_high<<32);
+
 	//printk( KERN_INFO "rdmsr read:   %ld\n", count);
+	hardware_events[0][counter] = count; 
+	//printk( KERN_INFO "he[i][counter] = %d\n", hardware_events[0][counter] ); 
 	
-	getnstimeofday( &ts4 );
-	
-	hardware_events[0][counter] = count;
-	hardware_events[num_events-1][counter] = ts4.tv_nsec - ts3.tv_nsec;
-	//hardware_events[num_events-1][counter] = get_cpu();
 	hardware_events[num_events][counter] = 0;
 		
-	ts3.tv_nsec = ts4.tv_nsec;
-
-	return count;
+    return count;
 }
 
 
@@ -172,37 +172,32 @@ int kprobes_handle_copy_process(struct kprobe* p, struct pt_regs* regs)
 
 struct rq* jprobes_handle_finish_task_switch(struct task_struct* prev)
 {
-	//int i;
+	int i;
 	
 	if ( recording && ( counter < num_recordings ) ) { // TODO: rm 2nd cond
 		if ( current->pid == target_pid ) { 
 			timer_restart = 1;
+			ktime_period_ns = ktime_set( 0, delay_in_ns );
+			hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
   		printk_d("Timer in: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
-			pmu_restart_counters();
 			if ( counter < num_recordings ) {	
-				pmu_read_counters1();
-				//for ( i=0; i < num_events; ++i ) {
-				//	 hardware_events[i][counter] = -2; 
-  			//}
+				for ( i=0; i < num_events; ++i ) {
+					 hardware_events[i][counter] = -2; 
+  			}
 				hardware_events[num_events][counter] = 2;
 				++counter;
 			}	
-			//pmu_restart_counters(lprof_cmd.counter, lprof_cmd.config);
-			ktime_period_ns = ktime_set( 0, delay_in_ns );
-			hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
+			pmu_reset_counters1(lprof_cmd.counter, lprof_cmd.config);
 		} else if ( prev->pid == target_pid ) {
-			hrtimer_cancel( &hr_timer );
-			pmu_stop_counters();
 			timer_restart = 0; 
+			hrtimer_cancel( &hr_timer ); // Needed?
 			printk_d("Timer out: jprobes_handle_finish_task_switch() [%d] -> [%d]\n", prev->pid, current->pid);
-			if ( counter < num_recordings ) {	
-				pmu_read_counters1();
-				//for ( i=0; i < num_events; ++i ) {
-				//	 hardware_events[i][counter] = -3; 
-  			//}
-				hardware_events[num_events][counter] = 3;
-				++counter;
-			}
+			for ( i=0; i < num_events; ++i ) {
+				 hardware_events[i][counter] = -3; 
+  			}
+			hardware_events[num_events][counter] = 3;
+			++counter;
+			pmu_stop_counters();
 		}
 	}
 
@@ -342,14 +337,14 @@ int start_counters( unsigned int pmu_counter, unsigned long long pmu_config ) {
 		recording = 1;
 		timer_restart = 1;
 		counter = 0;
+		ktime_period_ns = ktime_set( 0, delay_in_ns );
 		for ( i=0; i < (num_events+1); ++i ) { // reset values
 			for ( j=0; j < num_recordings; ++j ) {
 				hardware_events[i][j] = -420;
 			}
 		}
 		pmu_start_counters(pmu_counter, pmu_config);
-		//ktime_period_ns = ktime_set( 0, delay_in_ns );
-		//hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
+		hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
 	} else {
 		printk( KERN_INFO "Invalid action: Counters already collecting\n" );
 	}
@@ -445,16 +440,10 @@ int initialize_memory() {
 	int i, j;
 	
 	printk( "Memory initializing\n" );
-
-	//delay_in_ns = 5E3L;
-	//num_recordings = div_u64(1E7L, delay_in_ns); // Holds 100ms worth of data
 	
-	// OpenSSL takes about 19ms. Lets increase this to 50ms for safety.
-	// To get 500 time counts, we will use use a 1ms counter.
-	delay_in_ns = 1E5L;
-	num_recordings = 500;
-	
-	num_events = 7;
+	delay_in_ns = 5E3L;
+	num_events = 6;
+	num_recordings = div_u64(1E7L, delay_in_ns); // Holds 100ms worth of data
 	
 	hardware_events = kmalloc( (num_events+1)*sizeof(int *), GFP_KERNEL );
 	hardware_events[0] = kmalloc( (num_events+1)*num_recordings*sizeof(int), GFP_KERNEL );
