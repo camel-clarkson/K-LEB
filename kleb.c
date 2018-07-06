@@ -34,7 +34,7 @@ static int delay_in_ns, num_events, num_recordings, counter, timer_restart;
 static int target_pid, recording;
 static int** hardware_events;
 static int Major;
-static lprof_cmd_t lprof_cmd;
+static kleb_ioctl_args_t kleb_ioctl_args;
 
 static int reg_addr, reg_addr_val, event_num, umask, enable_bits, disable_bits, event_on, event_off;
 static long int eax_low, edx_high;
@@ -46,9 +46,7 @@ struct cdev *kernel_cdev;
 static struct timespec ts1, ts2, ts3, ts4;
 
 
-
-
-
+// -----------------------------------------------------------------------------------------------
 
 
 unsigned long rdpmc_instructions(void)
@@ -64,16 +62,15 @@ unsigned long rdpmc_instructions(void)
 unsigned long start_rdpmc_ins, stop_rdpmc_ins;
 long int count_in;
 
-static long pmu_start_counters(unsigned int counter, unsigned long long config)
+static long pmu_start_counters(unsigned int counter, unsigned long long counter_umask, unsigned int user_os_rec)
 {
 	reg_addr = 0x186; // 0x186 is perfeventsel0
-	//int event_num = 0x4f2e; 
-	//int event_num = 0x412e; 
-	//int event_num = 0xc0; 
 	event_num = counter;
-	umask = 0x3F00; 
-	enable_bits = 0x430000;
-	disable_bits = 0x130000;
+	counter_umask &= 0xFF; // Enforces requirement of 0 <= counter_umask <= 0xFF
+	umask = counter_umask << 8;
+	user_os_rec &= 0x03; // Enforces requirement of 0 <= user_os_rec <= 3
+	enable_bits = 0x400000 + (user_os_rec << 16);
+	disable_bits = 0x100000 + (user_os_rec << 16);
 	event_on = event_num | umask | enable_bits;
 	event_off = event_num | umask | disable_bits; 
 
@@ -114,7 +111,7 @@ static long pmu_stop_counters( void )
 	return count;
 }
 
-static long pmu_restart_counters( void )//unsigned int counter, unsigned long long config)
+static long pmu_restart_counters( void )
 {
 	edx_high = 0x00;
 	eax_low = hardware_events[0][counter-2];
@@ -149,9 +146,7 @@ static long pmu_read_counters1( void )
 }
 
 
-
-
-
+// -----------------------------------------------------------------------------------------------
 
 
 int kprobes_handle_do_exit(struct kprobe* p, struct pt_regs* regs)
@@ -276,19 +271,17 @@ int register_all(void)
     return (-EFAULT);
   }
 
-  printk_d("lprof: finish_task_switch @ [%p], do_exit @ [%p], copy_process @ [%p]\n", finish_task_switch_jp.kp.addr, do_exit_kp.addr, copy_process_kp.addr);
+  printk_d("finish_task_switch @ [%p], do_exit @ [%p], copy_process @ [%p]\n", finish_task_switch_jp.kp.addr, do_exit_kp.addr, copy_process_kp.addr);
 
   return (0);
 }
 
 
+// -----------------------------------------------------------------------------------------------
 
 
-
-
-
-
-enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
+enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) 
+{
 	ktime_t kt_now;
 	int overrun;	
 
@@ -310,13 +303,50 @@ enum hrtimer_restart hrtimer_callback( struct hrtimer *timer ) {
 	}
 }
 
-int open( struct inode *inode, struct file *fp ) {
+int start_counters( unsigned int pmu_counter, unsigned long long pmu_counter_umask, unsigned int pmu_user_os_rec ) 
+{
+	int i, j;
+
+	if ( !recording ){
+		recording = 1;
+		timer_restart = 1;
+		counter = 0;
+		for ( i=0; i < (num_events+1); ++i ) { // reset values
+			for ( j=0; j < num_recordings; ++j ) {
+				hardware_events[i][j] = -420;
+			}
+		}
+		pmu_start_counters(pmu_counter, pmu_counter_umask, pmu_user_os_rec);
+		//ktime_period_ns = ktime_set( 0, delay_in_ns );
+		//hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
+	} else {
+		printk( KERN_INFO "Invalid action: Counters already collecting\n" );
+	}
+
+	return 0;
+}
+
+int stop_counters() 
+{
+	pmu_stop_counters();
+	recording = 0;
+	timer_restart = 0;
+
+	return 0;
+}
+
+
+// -----------------------------------------------------------------------------------------------
+
+
+int open( struct inode *inode, struct file *fp ) 
+{
 	printk( KERN_INFO "Inside open\n" );
 	return 0;
 }
 
-ssize_t read( struct file *filep, char *buffer, 
-                   size_t len, loff_t *offset ) {
+ssize_t read( struct file *filep, char *buffer, size_t len, loff_t *offset ) 
+{
 	int size_of_message = num_recordings * (num_events+1) * sizeof(int);
 	int error_count = copy_to_user( buffer, hardware_events[0], 
                                    size_of_message );
@@ -330,56 +360,31 @@ ssize_t read( struct file *filep, char *buffer,
   }
 }
 
-int release( struct inode *inode, struct file *fp ) {
+int release( struct inode *inode, struct file *fp ) 
+{
 	printk( KERN_INFO "Inside close\n" );
 	return 0;
 }
 
-int start_counters( unsigned int pmu_counter, unsigned long long pmu_config ) {
-	int i, j;
-
-	if ( !recording ){
-		recording = 1;
-		timer_restart = 1;
-		counter = 0;
-		for ( i=0; i < (num_events+1); ++i ) { // reset values
-			for ( j=0; j < num_recordings; ++j ) {
-				hardware_events[i][j] = -420;
-			}
-		}
-		pmu_start_counters(pmu_counter, pmu_config);
-		//ktime_period_ns = ktime_set( 0, delay_in_ns );
-		//hrtimer_start( &hr_timer, ktime_period_ns, HRTIMER_MODE_REL );
-	} else {
-		printk( KERN_INFO "Invalid action: Counters already collecting\n" );
-	}
-
-	return 0;
-}
-
-int stop_counters() {
-	pmu_stop_counters();
-	recording = 0;
-	timer_restart = 0;
-
-	return 0;
-}
 
 #ifdef UNLOCKED
-
-long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) {
+long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) 
+#else
+int ioctl_funcs( struct inode *inode, struct file *fp,unsigned int cmd, unsigned long arg )
+#endif
+{
 	int ret = 0;
 
-	lprof_cmd_t* lprof_cmd_user = (lprof_cmd_t*)(arg);
+	kleb_ioctl_args_t* kleb_ioctl_args_user = (kleb_ioctl_args_t*)(arg);
 
-	if (lprof_cmd_user == NULL)
+	if (kleb_ioctl_args_user == NULL)
 	{ 
 		printk_d("lprof_ioctl: User did not pass in cmd\n");
 		return (-EINVAL);
 	}
 
 	//copy the values from userspace
-	if (copy_from_user(&lprof_cmd, lprof_cmd_user, sizeof(lprof_cmd_t)) != 0)
+	if (copy_from_user(&kleb_ioctl_args, kleb_ioctl_args_user, sizeof(kleb_ioctl_args_t)) != 0)
 	{
   		printk_d("lprof_ioctl: Could not copy cmd from userspace\n");
   		return (-EINVAL);
@@ -391,15 +396,14 @@ long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) {
 			break;
 		case IOCTL_START:
 			printk( KERN_INFO "Starting counters\n" );
-			target_pid = lprof_cmd.pid;
+			target_pid = kleb_ioctl_args.pid;
+			delay_in_ns = kleb_ioctl_args.delay_in_ns;
 			printk( KERN_INFO "target pid: %d\n", (int) target_pid );
-			start_counters(lprof_cmd.counter, lprof_cmd.config);
-			//pmu_start_counters(lprof_cmd.counter, lprof_cmd.config);
+			start_counters(kleb_ioctl_args.counter, kleb_ioctl_args.counter_umask, kleb_ioctl_args.user_os_rec);
 			break;
 		case IOCTL_STOP:
 			printk( KERN_INFO "Stopping counters\n" );
 			stop_counters();
-			//pmu_stop_counters();
 			break;
 		case IOCTL_DELETE_COUNTERS:
 			printk( KERN_INFO "This will delete the counters\n" );
@@ -418,41 +422,33 @@ long ioctl_funcs( struct file *fp, unsigned int cmd, unsigned long arg ) {
 	return ret;
 }
 
+#ifdef UNLOCKED
 struct file_operations fops = {
 	open: open,
 	read: read,
 	unlocked_ioctl: ioctl_funcs,
 	release: release
 };
-
-#else // TODO: Fix this to match the upper one
-
-int ioctl_funcs( struct inode *inode, struct file *fp,
-                  unsigned int cmd, unsigned long arg ) {
-
-}
-
+#else
 struct file_operations fops = {
 	open: open,
 	read: read,
 	ioctl: ioctl_funcs,
 	release: release
 };
-
 #endif
 
-int initialize_memory() {
+int initialize_memory() 
+{
 	int i, j;
 	
 	printk( "Memory initializing\n" );
 
-	//delay_in_ns = 5E3L;
-	//num_recordings = div_u64(1E7L, delay_in_ns); // Holds 100ms worth of data
-	
 	// OpenSSL takes about 19ms. Lets increase this to 50ms for safety.
 	// To get 500 time counts, we will use use a 1ms counter.
 	delay_in_ns = 1E5L;
 	num_recordings = 500;
+	//num_recordings = div_u64(1E7L, delay_in_ns); // Holds 100ms worth of data
 	
 	num_events = 7;
 	
@@ -468,7 +464,8 @@ int initialize_memory() {
 	return 0;
 }
 
-int initialize_timer() {
+int initialize_timer() 
+{
 	printk( "Timer initializing\n" );
 	
 	counter = 0;
@@ -480,7 +477,8 @@ int initialize_timer() {
 	return 0;
 }
 
-int initialize_ioctl() {
+int initialize_ioctl() 
+{
 	int ret;
 	dev_t dev_no, dev;
 	
@@ -509,7 +507,8 @@ int initialize_ioctl() {
 	return 0;
 }
 
-int init_module( void ) {	
+int init_module( void ) 
+{	
 	int ret;
 
 	if ( initialize_memory() < 0 ){ 
@@ -539,7 +538,8 @@ int init_module( void ) {
 	return 0;
 }
 
-int cleanup_memory() {
+int cleanup_memory() 
+{
 	printk( "Memory cleaning up\n" );
 	
 	kfree(hardware_events[0]);
@@ -559,7 +559,8 @@ int cleanup_timer() {
 	return 0;	
 }
 
-int cleanup_ioctl() {
+int cleanup_ioctl() 
+{
 	printk( "IOCTL cleaning up\n" );
 
 	cdev_del(kernel_cdev);

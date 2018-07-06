@@ -11,7 +11,7 @@
 #define BILLION 1000000000L
 
 int main(){
-	int fd = open("/dev/temp", O_RDWR);
+	int fd = open(DEVICE_PATH, O_RDWR);
 	if(fd == -1){
 		printf("Error in opening file \n");
 		exit(-1);

@@ -18,26 +18,24 @@
 
 typedef struct {
 	int pid;
-	unsigned long long config;
-} kleb_ioctl_args_t;
-
-typedef struct _lprof_cmd_t
-{
-  unsigned int pid;
   unsigned int counter;
-  unsigned long long config; 
-} lprof_cmd_t;
+	unsigned long long counter_umask;
+	unsigned int delay_in_ns;
+	unsigned int user_os_rec; // 1 is user only, 2 is os only, 3 is both	
+} kleb_ioctl_args_t;
 
 int initialize_memory( void );
 int initialize_timer( void );
 int initialize_ioctl( void );
+int init_module( void );
 
-int start_counters( unsigned int pmu_counter, unsigned long long pmu_config );
+int start_counters( unsigned int pmu_counter, unsigned long long pmu_config, unsigned int pmu_user_os_rec);
 int stop_counters( void );
 
 int cleanup_memory( void );
 int cleanup_timer( void );
 int cleanup_ioctl( void );
+void cleanup_module( void );
 
 #define DO_EXIT_NAME "do_exit"
 #define COPY_PROCESS_NAME "copy_process"
@@ -46,7 +44,7 @@ int cleanup_ioctl( void );
 
 #define DEBUG
 #ifdef DEBUG
-	#define printk_d(...) printk(KERN_INFO "lprof: " __VA_ARGS__)
+	#define printk_d(...) printk(KERN_INFO "kleb: " __VA_ARGS__)
 #else
 	#define printk_d(...)
 #endif // DEBUG
