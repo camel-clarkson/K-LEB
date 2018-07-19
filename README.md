@@ -8,15 +8,20 @@ It implements three key features:
   3) The ability to monitor events periodically with a high resolution kernel timer
 
 To apply the module, run the following commands:
-	> make clean; make
-	> sudo insmod kleb.ko
-	> dmesg
-	> sudo mknod /dev/temp c <major number> 0
+	```
+	make clean; make
+	sudo insmod kleb.ko
+	dmesg
+	sudo mknod /dev/kleb c <major number> 0
+	```
 
 To start the module, run the following bash command:
-	> sudo ./ioctl_start
-
+	```
+	sudo ./ioctl_start
+	```
+	
 To stop the module, run the following bash command:
-	> sudo ./ioctl_stop
-
+	```
+	sudo ./ioctl_stop
+	```
 
