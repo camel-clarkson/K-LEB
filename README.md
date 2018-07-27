@@ -7,7 +7,14 @@ It implements three key features:
   2) The ability to keep the event recording process specific
   3) The ability to monitor events periodically with a high resolution kernel timer
 
-To apply the module, run the following commands:
+To automatically apply the module, run 
+
+```
+sudo bash initialize.sh
+```
+.
+
+To manually apply the module, run the following commands:
 	```
 	make clean; make
 	sudo insmod kleb.ko
@@ -15,9 +22,9 @@ To apply the module, run the following commands:
 	sudo mknod /dev/kleb c <major number> 0
 	```
 
-To start the module, run the following bash command:
+To manually start the module, run the following bash command:
 	```
-	sudo ./ioctl_start
+	sudo ./ioctl_start <counter> <umask> <timer delay> <./program path>
 	```
 	
 To stop the module, run the following bash command:
