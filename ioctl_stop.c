@@ -22,7 +22,7 @@ int main(){
 
 	ioctl(fd, IOCTL_STOP, "Stopping stuff");
 
-	int num_events = 7;
+	int num_events = 5;
 	int num_recordings = 500;
 	int **hardware_events = malloc( (num_events+1)*sizeof(int *) );
 	hardware_events[0] = malloc( (num_events+1)*num_recordings*sizeof(int) );
@@ -40,7 +40,6 @@ int main(){
   } 
 
 	FILE *fp = fopen("../LR_v13_tfdeploy/input.csv", "a");
-	fprintf(stdout, "1,foo,\n");
 	int j;
 	//for ( j=0; j < 100; ++j ) {
 	for ( j=0; j < num_recordings; ++j ) {

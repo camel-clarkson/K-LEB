@@ -7,10 +7,12 @@
 
 #define IOCTL_DEFINE_COUNTERS _IOW(IOC_MAGIC, 0, char *)
 #define IOCTL_START _IOW(IOC_MAGIC, 1, char *)
-#define IOCTL_STOP _IOW(IOC_MAGIC, 2, char *)
-#define IOCTL_DELETE_COUNTERS _IOW(IOC_MAGIC, 3, char *)
-#define IOCTL_DEBUG _IOW(IOC_MAGIC, 4, char *)
-#define IOCTL_STATS _IOW(IOC_MAGIC, 5, char *)
+#define IOCTL_DUMP _IOW(IOC_MAGIC, 2, char *)
+
+#define IOCTL_STOP _IOW(IOC_MAGIC, 3, char *)
+#define IOCTL_DELETE_COUNTERS _IOW(IOC_MAGIC, 4, char *)
+#define IOCTL_DEBUG _IOW(IOC_MAGIC, 5, char *)
+#define IOCTL_STATS _IOW(IOC_MAGIC, 6, char *)
 
 #define DEVICE_NAME "kleb"
 
@@ -18,7 +20,7 @@
 
 typedef struct {
 	int pid;
-  unsigned int counter;
+ 	unsigned int counter;
 	unsigned long long counter_umask;
 	unsigned int delay_in_ns;
 	unsigned int user_os_rec; // 1 is user only, 2 is os only, 3 is both	
@@ -31,6 +33,7 @@ int init_module( void );
 
 int start_counters( unsigned int pmu_counter, unsigned long long pmu_config, unsigned int pmu_user_os_rec);
 int stop_counters( void );
+int dump_counters( void );
 
 int cleanup_memory( void );
 int cleanup_timer( void );

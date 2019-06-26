@@ -24,9 +24,9 @@
 #endif
 
 MODULE_LICENSE("GPL"); // Currently using the MIT license
-MODULE_AUTHOR("James Bruska");
+MODULE_AUTHOR("James Bruska, Caleb DeLaBruere");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
-MODULE_VERSION("0.6.0");
+MODULE_VERSION("0.7.0");
 
 static struct hrtimer hr_timer;
 static ktime_t ktime_period_ns;
@@ -37,6 +37,11 @@ static int Major;
 static kleb_ioctl_args_t kleb_ioctl_args;
 
 static int reg_addr, reg_addr_val, event_num, umask, enable_bits, disable_bits, event_on, event_off;
+//static int counter_arr[4];
+//static int umask_arr[4];
+static int test_counters[4];
+static int addr[4];
+static int addr_val[4];
 static long int eax_low, edx_high;
 
 struct cdev *kernel_cdev;
@@ -47,45 +52,59 @@ static struct timespec ts1, ts2, ts3, ts4;
 
 
 // -----------------------------------------------------------------------------------------------
-
-
-unsigned long rdpmc_instructions(void)
-{
-	unsigned a, d, c;
-
-	c = (1<<30)+1;
-	__asm__ volatile( "rdpmc" : "=a" (a), "=d" (d) : "c" (c) );
-
-	return ((unsigned long) a) | (((unsigned long) d) << 32);;
-}
-
 unsigned long start_rdpmc_ins, stop_rdpmc_ins;
 long int count_in;
 
 static long pmu_start_counters(unsigned int counter, unsigned long long counter_umask, unsigned int user_os_rec)
 {
-	reg_addr = 0x186; // 0x186 is perfeventsel0
-	event_num = counter;
-	counter_umask &= 0xFF; // Enforces requirement of 0 <= counter_umask <= 0xFF
-	umask = counter_umask << 8;
+	int i = 0;
+	
+	//Assign perfeventsel0-3
+	addr[0] = 0x186; 
+	addr[1] = 0x187;
+	addr[2] = 0x188;
+	addr[3] = 0x189;
+
+	//HPCs to record on
+	//for ( i=0;i<4;i++)
+	//{
+	//test_counters[i]=counter[i];	//counter[0]
+	//}
+	
+	test_counters[0]=0x4f2e;
+	test_counters[1]=0x1ae;	
+	test_counters[2]=0x412e;
+	test_counters[3]=0;
+	
 	user_os_rec &= 0x03; // Enforces requirement of 0 <= user_os_rec <= 3
 	enable_bits = 0x400000 + (user_os_rec << 16);
 	disable_bits = 0x100000 + (user_os_rec << 16);
-	event_on = event_num | umask | enable_bits;
-	event_off = event_num | umask | disable_bits; 
+	counter_umask &= 0xFF; // Enforces requirement of 0 <= counter_umask <= 0xFF
+	umask = counter_umask << 8;
 
-	reg_addr_val = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
+	//Assign perfctr0-3
+	addr_val[0] = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
+	addr_val[1] = 0xc2;
+	addr_val[2] = 0xc3;
+	addr_val[3] = 0xc4;
+	
+	for ( i=0;i<4;i++)
+	{
+			reg_addr_val = addr_val[i];
+			reg_addr = addr[i];
+			
+			
+			// DEBUG
+			//printk( "event: %d", event_num);
+			getnstimeofday( &ts1 );
 
-	// DEBUG
-	//printk( "event: %d", event_num);
-	getnstimeofday( &ts1 );
+			__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_off), "d"(0x00));
 
-	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_off), "d"(0x00));
-
-	__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(0x00), "d"(0x00));
-	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
-  count_in = ((long int)eax_low | (long int)edx_high<<32);
-	//printk( KERN_INFO "rdmsr in:   %ld", count_in);
+			__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(0x00), "d"(0x00));
+			__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+			count_in = ((long int)eax_low | (long int)edx_high<<32);
+			//printk( KERN_INFO "rdmsr in:   %ld", count_in);
+	}
 
 	return count_in;
 }
@@ -93,53 +112,90 @@ static long pmu_start_counters(unsigned int counter, unsigned long long counter_
 static long pmu_stop_counters( void )
 {
 	long int count;
+	int i = 0;
 	
-	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_off), "d"(0x00));
+	for ( i=0;i<4;i++)
+	{
+			reg_addr_val = addr_val[i];
+			reg_addr = addr[i];
+			event_num = test_counters[i];
+			event_on = event_num | umask | enable_bits;
+			event_off = event_num | umask | disable_bits; 
 
-	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
-	count = ((long int)eax_low | (long int)edx_high<<32);
+			__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_off), "d"(0x00));
 
-	printk( KERN_INFO "rdmsr in:   %ld", count_in);
-	printk( KERN_INFO "rdmsr out:  %ld", count);
-	printk( KERN_INFO "rdmsr diff: %ld", count - count_in);
+			__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+			count = ((long int)eax_low | (long int)edx_high<<32);
+			
+			//FOR DEBUGGING - NOTE: Causes inaccuracy of counters when 
+			//	enabled due to the overhead of printk
+			//printk( KERN_INFO "rdmsr in:   %ld", count_in);
+			//printk( KERN_INFO "rdmsr out:  %ld", count);
+			//printk( KERN_INFO "rdmsr diff: %ld", count - count_in);
+			
+			// DEBUG
+			//printk( "counter at stop: %d\n", counter );
+			//getnstimeofday( &ts2 );
+			//printk( "%ld - \n%ld = \n%ld\n", ts2.tv_nsec, ts1.tv_nsec, ts2.tv_nsec - ts1.tv_nsec);
+	}
 	
-	// DEBUG
-	printk( "counter at stop: %d\n", counter );
-	getnstimeofday( &ts2 );
-	printk( "%ld - \n%ld = \n%ld\n", ts2.tv_nsec, ts1.tv_nsec, ts2.tv_nsec - ts1.tv_nsec);
-
 	return count;
 }
 
+
+
 static long pmu_restart_counters( void )
 {
+	int i = 0;
 	edx_high = 0x00;
-	eax_low = hardware_events[0][counter-2];
 	
-	__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
-	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
-	//printk( KERN_INFO "rdmsr reset:   %ld", count_in);
+	for ( i=0;i<4;i++)
+	{
+			
+			eax_low = hardware_events[i][counter-1];
+			reg_addr_val = addr_val[i];
+			reg_addr = addr[i];
+			event_num = test_counters[i];
+			event_on = event_num | umask | enable_bits;
+			event_off = event_num | umask | disable_bits; 
 
-	__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_on), "d"(0x00));
-	
+			__asm__ ("wrmsr" : : "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
+			__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+			//printk( KERN_INFO "rdmsr reset:   %ld", count_in);
+
+			__asm__ ("wrmsr" : : "c"(reg_addr), "a"(event_on), "d"(0x00));
+	}
+
 	return reg_addr_val;
 }
 
 static long pmu_read_counters1( void )
 {
 	long int count;
+	int i = 0;
+	
+	for ( i=0;i<4;i++)
+	{
+			reg_addr_val = addr_val[i];
+			reg_addr = addr[i];
+			event_num = test_counters[i];
+			
+			event_on = event_num | umask | enable_bits;
+			event_off = event_num | umask | disable_bits; 
 
-	__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
-	count = ((long int)eax_low | (long int)edx_high<<32);
-	//printk( KERN_INFO "rdmsr read:   %ld\n", count);
-	
+			__asm__("rdmsr" : "=a"(eax_low), "=d"(edx_high) : "c"(reg_addr_val));
+			count = ((long int)eax_low | (long int)edx_high<<32);
+			//printk( KERN_INFO "rdmsr read:   %ld\n", count);
+			
+			
+			hardware_events[i][counter] = count;
+	}
+
 	getnstimeofday( &ts4 );
-	
-	hardware_events[0][counter] = count;
 	hardware_events[num_events-1][counter] = ts4.tv_nsec - ts3.tv_nsec;
 	//hardware_events[num_events-1][counter] = get_cpu();
 	hardware_events[num_events][counter] = 0;
-		
+				
 	ts3.tv_nsec = ts4.tv_nsec;
 
 	return count;
@@ -153,7 +209,7 @@ int kprobes_handle_do_exit(struct kprobe* p, struct pt_regs* regs)
 {
 	if ( timer_restart ){
   	printk_d("In kprobes_handle_do_exit()\n");
-  }
+ 	}
 	return 0;
 }
 
@@ -161,7 +217,7 @@ int kprobes_handle_copy_process(struct kprobe* p, struct pt_regs* regs)
 {
 	if ( timer_restart ){
   	printk_d("In kprobes_handle_copy_process()\n");
-  }
+  	}
 	return 0;
 }
 
@@ -313,7 +369,7 @@ int start_counters( unsigned int pmu_counter, unsigned long long pmu_counter_uma
 		counter = 0;
 		for ( i=0; i < (num_events+1); ++i ) { // reset values
 			for ( j=0; j < num_recordings; ++j ) {
-				hardware_events[i][j] = -420;
+				hardware_events[i][j] = -10;
 			}
 		}
 		pmu_start_counters(pmu_counter, pmu_counter_umask, pmu_user_os_rec);
@@ -326,6 +382,11 @@ int start_counters( unsigned int pmu_counter, unsigned long long pmu_counter_uma
 	return 0;
 }
 
+int dump_counters()
+{
+	counter = 0;
+	return 0;
+}
 int stop_counters() 
 {
 	pmu_stop_counters();
@@ -401,6 +462,9 @@ int ioctl_funcs( struct inode *inode, struct file *fp,unsigned int cmd, unsigned
 			printk( KERN_INFO "target pid: %d\n", (int) target_pid );
 			start_counters(kleb_ioctl_args.counter, kleb_ioctl_args.counter_umask, kleb_ioctl_args.user_os_rec);
 			break;
+		case IOCTL_DUMP:
+			dump_counters();
+			break;	
 		case IOCTL_STOP:
 			printk( KERN_INFO "Stopping counters\n" );
 			stop_counters();
@@ -446,18 +510,18 @@ int initialize_memory()
 
 	// OpenSSL takes about 19ms. Lets increase this to 50ms for safety.
 	// To get 500 time counts, we will use use a 1ms counter.
-	delay_in_ns = 1E5L;
+	//delay_in_ns = 1E5L;
 	num_recordings = 500;
 	//num_recordings = div_u64(1E7L, delay_in_ns); // Holds 100ms worth of data
 	
-	num_events = 7;
+	num_events = 5;
 	
 	hardware_events = kmalloc( (num_events+1)*sizeof(int *), GFP_KERNEL );
 	hardware_events[0] = kmalloc( (num_events+1)*num_recordings*sizeof(int), GFP_KERNEL );
 	for ( i=0; i < (num_events+1); ++i ) { // This reduces the number of kmalloc calls
 		hardware_events[i] = *hardware_events + num_recordings * i;
 		for ( j=0; j < num_recordings; ++j ) {
-			hardware_events[i][j] = -420;
+			hardware_events[i][j] = -10;
 		}
 	}
 	
