@@ -50,3 +50,12 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+.vscode/ipch/36e73bba086e4b38/kleb.ipch
+.vscode/ipch/36e73bba086e4b38/mmap_address.bin
+.vscode/ipch/9481d3a898cd3114/ioctl_start.ipch
+.vscode/ipch/9481d3a898cd3114/mmap_address.bin
+.vscode/ipch/f9c5af0460d31f82/ioctl_stop.ipch
+.vscode/ipch/f9c5af0460d31f82/mmap_address.bin
+ioctl_stop
+ioctl_start
+meltdown/
