@@ -24,7 +24,7 @@
 #endif
 
 MODULE_LICENSE("GPL"); // Currently using the MIT license
-MODULE_AUTHOR("James Bruska");
+MODULE_AUTHOR("James Bruska, Caleb DeLaBruere");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
 MODULE_VERSION("0.6.0");
 
