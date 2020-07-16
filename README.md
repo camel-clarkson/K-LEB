@@ -36,7 +36,7 @@ dmesg
 sudo mknod /dev/kleb c <major number> 0
 ```
 # Getting started
-Run the script Initialize.sh useing the configuration configuration file perf.cfg for events selection
+Run initialize.sh useing the configuration configuration file perf.cfg for events selection
 
 ##### ex perf.cfg:
 
