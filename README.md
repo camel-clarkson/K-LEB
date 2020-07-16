@@ -39,13 +39,10 @@ sudo mknod /dev/kleb c <major number> 0
 Initialize.sh script use configuration file perf.cfg for events selection.
 perf.cfg
 
-> \<HPC Event1\>
-
-> \<HPC Event2\>
-
-> \<HPC Event3\>
-
-> \<HPC Event4\>
+> \<HPC Event1\> <br>
+\<HPC Event2\> <br>
+\<HPC Event3\> <br>
+\<HPC Event4\> <br>
 	
 To automatically start monitoring, run:
 ```
