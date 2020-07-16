@@ -36,8 +36,9 @@ dmesg
 sudo mknod /dev/kleb c <major number> 0
 ```
 # Getting started
-Initialize.sh script use configuration file perf.cfg for events selection.
-perf.cfg
+Run the script Initialize.sh useing the configuration configuration file perf.cfg for events selection
+
+##### perf.cfg
 
 > \<HPC Event1\> <br>
 \<HPC Event2\> <br>
