@@ -48,15 +48,15 @@ To automatically start monitoring, run:
 ```
 sudo bash initialize.sh
 ```
-select option: 1) Start
+- select option: 1) Start
 
-Enter timer granularity in ms
+- Enter timer granularity in ms
 
-Select program to monitor using \<Program PATH\> or \<Program PID\>
+- Select program to monitor using \<Program PATH\> or \<Program PID\>
 		
-To manually start monitoring, run the following bash command:
+- To manually start monitoring, run the following bash command:
 ```
 sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <umask> <timer delay (in ms)> <Log path> <program path>
 ```
 
-After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
+- After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
