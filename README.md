@@ -18,7 +18,7 @@ Install essential development tools and the kernel headers
  apt-get install build-essential linux-headers-$(uname -r)
 ```
 
-### Automatically spply the module:
+### Automatically apply the module:
 -  Run: 
 ```
 sudo bash initialize.sh
