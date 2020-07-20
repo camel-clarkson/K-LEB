@@ -556,7 +556,8 @@ struct rq *jprobes_handle_finish_task_switch(struct task_struct *prev)
 						fork_check--;
 						if (counter < num_recordings)
 						{
-							pmu_read_counters();			
+							pmu_read_counters();	
+							hardware_events[num_events][counter] = prev->pid;		
 							++counter;
 						}
 					}
@@ -573,6 +574,7 @@ struct rq *jprobes_handle_finish_task_switch(struct task_struct *prev)
 						if (counter < num_recordings)
 						{
 							pmu_read_counters();
+							hardware_events[num_events][counter] = prev->pid;	
 							++counter;
 						}
 					}
@@ -585,6 +587,7 @@ struct rq *jprobes_handle_finish_task_switch(struct task_struct *prev)
 						if (counter < num_recordings)
 						{
 							pmu_read_counters();
+							hardware_events[num_events][counter] = prev->pid;	
 							++counter;
 						}
 					}
@@ -599,6 +602,7 @@ struct rq *jprobes_handle_finish_task_switch(struct task_struct *prev)
 						if (counter < num_recordings)
 						{
 							pmu_read_counters();
+							hardware_events[num_events][counter] = prev->pid;	
 							++counter;
 						}
 						
