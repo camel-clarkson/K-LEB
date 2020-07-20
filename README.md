@@ -55,7 +55,7 @@ sudo bash initialize.sh
 
 - Select program to monitor using \<Program PATH\> or \<Program PID\>
 
-Shown here is what a sucessful run will look like
+Shown here is what a sucessful run will look like:
 
 ![](Images/Runstart.png)
 		
@@ -64,13 +64,13 @@ Shown here is what a sucessful run will look like
 sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <umask> <timer delay (in ms)> <Log path> <program path>
 ```
 
-Here is what it will look like when it is done monitoring
+Here is what it will look like when it is done monitoring:
 
 ![](Images/StopMonitoring.png)
 
 
 - After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
-Here is what the output file may look like
+Here is what the output file may look like:
 
 ![](Images/output.png)
