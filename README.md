@@ -48,7 +48,7 @@ sudo bash initialize.sh
 sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <timer delay (in ms)> <Log path> <program path>
 ```
 
-User can specify the program to monitor using <Program PATH> or <Program PID>, as well as supply program parameters, if applicable.
+User can specify the program to monitor using \<Program PATH\> or \<Program PID\>, as well as supply program parameters, if applicable.
 
 Users can specify the hardware events they want to monitor.
 
