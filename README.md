@@ -1,5 +1,5 @@
 # K-LEB (Kernel - Lineage of Event Behavior)
-##### This is a kernel module designed to monitor hardware events from a kernel level. 
+##### K-LEB is a kernel module designed to monitor hardware events from a kernel level. 
 
 ##### It implements three key features:
 
@@ -10,6 +10,9 @@
 ## Supported Kernel
 Linux Kernel 4.13.0-15 and earlier
 
+## Supported Processors
+Currently K-LEB supports Intel/x86 processors with hardware performance counters only
+
 # Setup
 
 #### Prerequisite 
@@ -18,15 +21,7 @@ Install essential development tools and the kernel headers
  apt-get install build-essential linux-headers-$(uname -r)
 ```
 
-### Automatically apply the module:
--  Run: 
-```
-sudo bash initialize.sh
-```
-- select option: 2) Setup
-    - The script will automatically compile and insert K-LEB kernel module to the kernel.
-
-### Manually apply the module
+### Apply the module (command line):
 
 - run the following commands:
 ```
@@ -35,8 +30,17 @@ sudo insmod kleb.ko
 dmesg
 sudo mknod /dev/kleb c <major number> 0
 ```
+
+### Apply the module (using script):
+-  Run: 
+```
+sudo bash initialize.sh
+```
+- select option: 2) Setup
+    - The script will automatically compile and insert K-LEB kernel module to the kernel.
+    
 # Getting started
-Run initialize.sh useing the configuration configuration file perf.cfg for events selection
+Run initialize.sh using the configuration file perf.cfg for events selection
 
 ##### ex perf.cfg:
 
