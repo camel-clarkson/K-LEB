@@ -80,7 +80,7 @@ int main(int argc, char **argv)
 	//FILE *config;
 	// ARGS: Counter1, Counter2, Counter3, Counter4, Umask, Timer Delay (in ms), Log path, Program path
 	// EX: 0xc0 0x4f 100000
-	if(argc < 9){
+	if(argc < 8){
 		printf("Error reading configurations\nExiting...\n");
 		exit(0);
 	}
@@ -89,7 +89,7 @@ int main(int argc, char **argv)
 	float hrtimer = 1;
 	kleb_ioctl_args_t kleb_ioctl_args;
 	unsigned int counter[4];
-	int pid = atoi(argv[8]);
+	int pid = atoi(argv[7]);
 	
 	checkint=0;
 	signal(SIGINT, sigintHandler);
@@ -107,19 +107,12 @@ int main(int argc, char **argv)
 	{ // child
 		sleep(1);
 		//printf("my fork pid (child): %d\n", getpid());
-		char* cmdargv[argc-8];
-		for (int i = 9; i < argc; i++){
-			cmdargv[i-9] = argv[i];
-			printf("Argv: %s Argc:%d\n",cmdargv[i-9], argc);
+		char* cmdargv[argc-7];
+		for (int i = 8; i < argc; i++){
+			cmdargv[i-8] = argv[i];
 		}
-		cmdargv[argc-9]=NULL;
-		//if(strcmp(argv[8], "/home/camel/chutitep/hpc-overhead-test/linpack/xlinpack_xeon64 ")){
-		//	execv(argv[8], (char *[]){" -i ", "/home/camel/chutitep/hpc-overhead-test/linpack/data_file", NULL});
-		//}
-		//else{
-			//execv(argv[8], (char *[]){"james", NULL});
-			execv(argv[8], cmdargv);
-		//}
+		cmdargv[argc-8]=NULL;
+		execv(argv[7], cmdargv);
 		
 
 		
@@ -135,11 +128,13 @@ int main(int argc, char **argv)
 			exit(-1);
 		}
 		kleb_ioctl_args.pid = pid;
-		//printf("child pid[%s]: %d\n",argv[0], pid);
-		//printf("Argv: %s Argc:%d\n",argv[8], argc);
 		for(int i = 1; i < 5; i++){
-			counter[i-1] = NameToRawConfigMask(argv[i]);
-			//printf("Counter[%d] %x\n",i, counter[i-1]);
+			if(isalpha(argv[i][0])){
+				counter[i-1] = NameToRawConfigMask(argv[i]);
+			}
+			else{
+				counter[i-1] = strtol(argv[i], NULL, 16);
+			}
 		}
 		kleb_ioctl_args.counter1 = counter[0];
 		kleb_ioctl_args.counter2 = counter[1];
@@ -150,9 +145,10 @@ int main(int argc, char **argv)
 		/* kleb_ioctl_args.counter1 = strtol(argv[1], NULL, 16);
 		kleb_ioctl_args.counter2 = strtol(argv[2], NULL, 16);
 		kleb_ioctl_args.counter3 = strtol(argv[3], NULL, 16);
-		kleb_ioctl_args.counter4 = strtol(argv[4], NULL, 16);*/
-		kleb_ioctl_args.counter_umask = strtol(argv[5], NULL, 16); 
-		hrtimer = strtof(argv[6], NULL);
+		kleb_ioctl_args.counter4 = strtol(argv[4], NULL, 16);
+		kleb_ioctl_args.counter_umask = strtol(argv[5], NULL, 16); */
+		kleb_ioctl_args.counter_umask = strtol("0x00", NULL, 16); 
+		hrtimer = strtof(argv[5], NULL);
 		kleb_ioctl_args.delay_in_ns = hrtimer*1000000;
 		//kleb_ioctl_args.delay_in_ns = strtol(argv[6], NULL, 10);
 		kleb_ioctl_args.user_os_rec = 1; //User:1 OS:2 Both:3
@@ -162,7 +158,8 @@ int main(int argc, char **argv)
 		//printf("IOCTL_START\n");
 		//ioctl(fd, IOCTL_START, &kleb_ioctl_args);
 		////////
-		   if(ioctl(fd, IOCTL_START, &kleb_ioctl_args) < 0)
+	 	 
+		    if(ioctl(fd, IOCTL_START, &kleb_ioctl_args) < 0)
 		{
 			     printf("ioctl failed and returned errno %s \n",strerror(errno));
 		}
@@ -322,7 +319,7 @@ ioctl_stop:				//IOCTL STOP
 				checkempty = 0;
 				printf("Stopping K-LEB...\n# of Sample: %d\n", num_sample/9);
 				
-				FILE *fp = fopen(argv[7], "a");
+				FILE *fp = fopen(argv[6], "a");
 				//Print double buffer
 				fprintf(fp, "%s,%s,%s,%s,INST,CPU_CLK_CYCLE,CPU_REF_CYCLE,CPU,PID\n", argv[1], argv[2], argv[3], argv[4]);
 				for (j = 0; j < bufindex && !checkempty; ++j)
@@ -370,7 +367,7 @@ ioctl_stop:				//IOCTL STOP
 		
 		//wait(pid);
 		close(fd);
-		printf("Log Path: %s\n ", argv[7]);
+		printf("Log Path: %s\n ", argv[6]);
 		
 	}
 }

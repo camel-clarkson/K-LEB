@@ -39,7 +39,7 @@ then
 									[ -z "$hrtimer" ] && hrtimer=1
 									read -p "Enter program to monitor: " target_path
 									log_path=$init_log_path"/Output.csv"
-									config="${counter[@]} 0x00 $hrtimer $log_path $target_path"
+									config="${counter[@]} $hrtimer $log_path $target_path"
 									#echo "Config: $config"
 									#Clear Log
 									> $log_path
