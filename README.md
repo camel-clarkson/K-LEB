@@ -23,7 +23,7 @@ Install essential development tools and the kernel headers
 
 ### Apply the module (command line):
 
-- run the following commands:
+- Run the following commands:
 ```
 make clean; make
 sudo insmod kleb.ko
@@ -36,7 +36,7 @@ sudo mknod /dev/kleb c <major number> 0
 ```
 sudo bash initialize.sh
 ```
-- select option: 2) Setup
+- Select option: 2) Setup
     - The script will automatically insert K-LEB kernel module to the kernel.
     
 # Getting started
@@ -48,9 +48,12 @@ sudo bash initialize.sh
 sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <timer delay (in ms)> <Log path> <program path>
 ```
 
+User can specify the program to monitor using <Program PATH> or <Program PID>, as well as supply program parameters, if applicable.
+
 Users can specify the hardware events they want to monitor.
 
 Please note: there are three fixed hardware events will be monitored, which are instructions retired, Cycles when thread is not halted, and Reference cycles when thread is not halted, in addition to the ones specified on the command line (prgrammable hardware events). 
+
 
 - After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
@@ -76,7 +79,7 @@ To start monitoring using the kernel module, run:
 ```
 sudo bash initialize.sh
 ```
-- select option: 1) Start
+- Select option: 1) Start
 
 - Enter timer granularity in ms
 
