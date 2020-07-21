@@ -73,6 +73,7 @@ Run initialize.sh using the configuration file perf.cfg for events selection
 \<HPC Event4\> <br>
 
 User can change the perf.cfg file to select the hardware events they want to monitor.
+
 Please note: there are three fixed hardware events will be monitored, which are instructions retired, Cycles when thread is not halted, and Reference cycles when thread is not halted, in addition to the ones specified on the command line (prgrammable hardware events). 
 
 To start monitoring using the kernel module, run:
