@@ -49,7 +49,8 @@ sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <timer delay (in ms)> <Lo
 ```
 
 Users can specify the hardware events they want to monitor.
-Please note: there are three default hardware events will be monitored, in addition to the ones specified on the command line. 
+
+Please note: there are three fixed hardware events will be monitored, which are instructions retired, Cycles when thread is not halted, and Reference cycles when thread is not halted, in addition to the ones specified on the command line (prgrammable hardware events). 
 
 - After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
@@ -69,7 +70,7 @@ Run initialize.sh using the configuration file perf.cfg for events selection
 \<HPC Event4\> <br>
 
 User can change the perf.cfg file to select the hardware events they want to monitor.
-Please note: there are three default hardware events will be monitored, in addition to the ones specified in the perf.cfg file. 
+Please note: there are three fixed hardware events will be monitored, which are instructions retired, Cycles when thread is not halted, and Reference cycles when thread is not halted, in addition to the ones specified on the command line (prgrammable hardware events). 
 
 To start monitoring using the kernel module, run:
 ```
