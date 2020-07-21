@@ -31,15 +31,34 @@ dmesg
 sudo mknod /dev/kleb c <major number> 0
 ```
 
-### Apply the module (using script):
+### Apply the module (with script):
 -  Run: 
 ```
 sudo bash initialize.sh
 ```
 - select option: 2) Setup
-    - The script will automatically compile and insert K-LEB kernel module to the kernel.
+    - The script will automatically insert K-LEB kernel module to the kernel.
     
 # Getting started
+
+### Use the module (commadn line)
+
+- To start monitoring using the kernel module, run the following bash command:
+```
+sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <timer delay (in ms)> <Log path> <program path>
+```
+
+Users can specify the hardware events they want to monitor.
+Please note: there are three default hardware events will be monitored, in addition to the ones specified on the command line. 
+
+- After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
+
+Here is what the output file may look like:
+
+![](Images/output.png)
+
+### Use the module (with script)
+
 Run initialize.sh using the configuration file perf.cfg for events selection
 
 ##### ex perf.cfg:
@@ -48,8 +67,11 @@ Run initialize.sh using the configuration file perf.cfg for events selection
 \<HPC Event2\> <br>
 \<HPC Event3\> <br>
 \<HPC Event4\> <br>
-	
-To automatically start monitoring, run:
+
+User can change the perf.cfg file to select the hardware events they want to monitor.
+Please note: there are three default hardware events will be monitored, in addition to the ones specified in the perf.cfg file. 
+
+To start monitoring using the kernel module, run:
 ```
 sudo bash initialize.sh
 ```
@@ -57,7 +79,7 @@ sudo bash initialize.sh
 
 - Enter timer granularity in ms
 
-- Select program to monitor using \<Program PATH\> or \<Program PID\>
+- Select program to monitor using \<Program PATH\> or \<Program PID\>, as well as supply program parameters, if applicable. 
 
 Shown here is what a sucessful run will look like:
 
@@ -67,15 +89,6 @@ Here is what it will look like when it is done monitoring:
 
 ![](Images/StopMonitoring.png)
 
-Here is what the output file may look like:
+After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
-![](Images/output.png)
-		
-- To manually start monitoring, run the following bash command:
-```
-sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <timer delay (in ms)> <Log path> <program path>
-```
-
-- After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
-
-
+# Unload the Module
