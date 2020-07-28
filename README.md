@@ -31,6 +31,12 @@ dmesg
 sudo mknod /dev/kleb c <major number> 0
 ```
 
+- To get your device's major number you can run:
+```
+dmesg | grep -i major
+```
+![](Images/MajorNumber.png)
+
 ### Apply the module (with the script):
 -  Run: 
 ```
