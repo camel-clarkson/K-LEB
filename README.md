@@ -1,14 +1,17 @@
 # K-LEB (Kernel - Lineage of Event Behavior)
-##### This is a kernel module designed to monitor hardware events from a kernel level. 
+#### K-LEB is a kernel module designed to monitor hardware events from a kernel level. 
 
-##### It implements three key features:
+#### It implements three key features:
 
 1. The ability to send this event info back to user space
 2. The ability to keep the event recording process specific
-3. The ability to monitor events periodically with a high resolution kernel timer
+3. The ability to monitor events periodically with a high-resolution kernel timer
 
 ## Supported Kernel
 Linux Kernel 4.13.0-15 and earlier
+
+## Supported Processors
+Currently K-LEB supports Intel/x86 processors with hardware performance counters only
 
 # Setup
 
@@ -18,25 +21,49 @@ Install essential development tools and the kernel headers
  apt-get install build-essential linux-headers-$(uname -r)
 ```
 
-### Automatically apply the module:
--  Run: 
-```
-sudo bash initialize.sh
-```
-- select option: 2) Setup
-    - The script will automatically compile and insert K-LEB kernel module to the kernel.
+### Apply the module (command line):
 
-### Manually apply the module
-
-- run the following commands:
+- Run the following commands:
 ```
 make clean; make
 sudo insmod kleb.ko
 dmesg
 sudo mknod /dev/kleb c <major number> 0
 ```
+
+### Apply the module (with the script):
+-  Run: 
+```
+sudo bash initialize.sh
+```
+- Select option: 2) Setup
+    - The script will automatically insert K-LEB kernel module to the kernel.
+    
 # Getting started
-Run initialize.sh useing the configuration configuration file perf.cfg for events selection
+
+### Use the module (command line)
+
+- To start monitoring using the kernel module, run the following bash command:
+```
+sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <timer delay (in ms)> <Log path> <program path>
+```
+
+Users can specify the program to monitor using \<Program PATH\> or \<Program PID\>, as well as supply program parameters, if applicable.
+
+Users can specify the hardware events they want to monitor.
+
+Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when then thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
+
+
+- After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
+
+Here is what the output file may look like:
+
+![](Images/output.png)
+
+### Use the module (with the script)
+
+Run initialize.sh using the configuration file perf.cfg for events selection
 
 ##### ex perf.cfg:
 
@@ -44,18 +71,22 @@ Run initialize.sh useing the configuration configuration file perf.cfg for event
 \<HPC Event2\> <br>
 \<HPC Event3\> <br>
 \<HPC Event4\> <br>
-	
-To automatically start monitoring, run:
+
+Users can change the perf.cfg file to select the hardware events they want to monitor.
+
+Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
+
+To start monitoring using the kernel module, run:
 ```
 sudo bash initialize.sh
 ```
-- select option: 1) Start
+- Select option: 1) Start
 
 - Enter timer granularity in ms
 
-- Select program to monitor using \<Program PATH\> or \<Program PID\>
+- Select program to monitor using \<Program PATH\> or \<Program PID\>, as well as supply program parameters, if applicable. 
 
-Shown here is what a sucessful run will look like:
+Shown here is what a successful run will look like:
 
 ![](Images/Runstart.png)
 
@@ -63,15 +94,25 @@ Here is what it will look like when it is done monitoring:
 
 ![](Images/StopMonitoring.png)
 
-Here is what the output file may look like:
+After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
-![](Images/output.png)
-		
-- To manually start monitoring, run the following bash command:
+# Unload the Module
+
+### Unload With Comand Line
+
+- Run the following commands:
 ```
-sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <timer delay (in ms)> <Log path> <program path>
+make clean
+sudo rm /dev/kleb
+sudo rmmod kleb
 ```
 
-- After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
+### Unload with Script
 
+- Run the script with:
+```
+sudo bash initialize.sh
+```
 
+- Select option: 2) Clean
+    - The script will automatically unload K-LEB kernel module from the kernel.

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020 James Bruska, Caleb DeLaBruere, Chutitep Woralert
+/* Copyright (c) 2017, 2020 Chutitep Woralert, James Bruska, Caleb DeLaBruere, Chen Liu
 
 This file is part of K-LEB.
 
@@ -14,6 +14,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
+
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
