@@ -52,6 +52,10 @@ Users can specify the program to monitor using \<Program PATH\> or \<Program PID
 
 Users can specify the hardware events they want to monitor.
 
+Example of a sucessful run:
+
+![](Images/RunExample.png)
+
 Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when then thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
 
 
@@ -88,11 +92,8 @@ sudo bash initialize.sh
 
 Shown here is what a successful run will look like:
 
-![](Images/Runstart.png)
+![](Images/UseScript.png)
 
-Here is what it will look like when it is done monitoring:
-
-![](Images/StopMonitoring.png)
 
 After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
