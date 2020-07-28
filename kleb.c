@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020 Chutitep Woralert, James Bruska, Caleb DeLaBruere, Chen Liu
+/* Copyright (c) 2017, 2020 James Bruska, Caleb DeLaBruere, Chutitep Woralert
 
 This file is part of K-LEB.
 
