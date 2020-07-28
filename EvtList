@@ -1,0 +1,39 @@
+/* List of configurable counters */
+/* Branch Events */
+BR_RET          /* Branch Instruction Retired */
+BR_MISP_RET     /* Branch Misses Retired */
+BR_EXEC         /* All Near Branchs Instructions Executed */
+MISP_BR_ANY     /* Misprediceted Near Branch Instructions Executed */
+MISP_BR_UN      /* Mispredicted Macro Unconditional Near Branch Instructions */
+MISP_BR_C       /* Mispredicted Conditional Near Branch Instructions Executed */
+/* Cache Events */
+Load                        /* Load Instructions Retired */
+STORE                       /* Store Instructions Retired */
+L1_ICACHE_STALL             /* Instruction Fetch Stalls from L1 Cache Misses */
+L1_ICACHE_REF               /* L1 Cache Read Fetch Instructions */
+L1_ICACHE_MISS              /* L1 Cache Misses Fetch Instructions */
+L1_ICACHE_HIT               /* L1 Cache Hit Fetch Instructions */
+L1_DCACHE_REF               /* L1 Data Cache Reference */
+L1_DCACHE_MISS              /* L1 Data Cache Misses */
+L1_DCACHE_HIT               /* L1 Data Cache Hit */
+L2_DATA_REF                 /* L2 Data Cache Request */
+L2_DATA_HIT                 /* L2 Data Cache Hit */
+LLC                         /* LLC Reference */
+MISS_LLC                    /* LLC Misses */
+MEM_LOAD_RETIRED_LLC_MISS   /* Misses LLC Load Retired */
+/* Instructions Events */
+INST_FP         /* MMX instructions Retired */
+ARITH_MULT      /* Multiply Operations Exectued */
+ARITH_DIV       /* Divide Operation Cycles */
+CALL            /* Near Unconditional Calls Retired */
+CALL_D_EXEC     /* Direct Near Call Executed */
+CALL_ID_EXEC    /* Indirect Near Call Executed */
+MISP_CALL       /* Mistpredicted Near Unconditional Calls Retired */
+MISS_ITLB       /* ITLB Misses */
+MISS_DTLB       /* STLB Misses */
+STLB_HIT        /* STLB Hit */
+
+/* List of fixed counters */
+CORE_CLK_FIXED      /* Unhalted Core Cycle */ 
+REF_CLK_FIXED       /* Unhalted Reference Cycle */
+IC_FIXED            /* Instruction Retired */

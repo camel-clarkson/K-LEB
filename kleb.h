@@ -25,7 +25,6 @@ along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
 #define IOCTL_DEFINE_COUNTERS _IOW(IOC_MAGIC, 0, char *)
 #define IOCTL_START _IOW(IOC_MAGIC, 1, char *)
 #define IOCTL_DUMP _IOW(IOC_MAGIC, 2, char *)
-
 #define IOCTL_STOP _IOW(IOC_MAGIC, 3, char *)
 #define IOCTL_DELETE_COUNTERS _IOW(IOC_MAGIC, 4, char *)
 #define IOCTL_DEBUG _IOW(IOC_MAGIC, 5, char *)
@@ -35,14 +34,14 @@ along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
 
 #define DEVICE_PATH "/dev/" DEVICE_NAME
 
-//Branch Events
+/* Branch Events */
 #define BR_RET 0x00c4
 #define BR_MISP_RET 0x00c5
 #define BR_EXEC 0x7f88
 #define MISP_BR_ANY 0x7f89
 #define MISP_BR_UN 0x0289
 #define MISP_BR_C 0x0189
-//Cache Events
+/* Cache Events */
 #define LOAD 0x010b
 #define STORE 0x020b
 #define L1_ICACHE_STALL 0x0480
@@ -57,7 +56,7 @@ along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
 #define LLC 0x4f2e
 #define MISS_LLC 0x412e
 #define MEM_LOAD_RETIRED_LLC_MISS 0x10cb
-//Instructions Events
+/* Instructions Events */
 #define INST_FP 0x02c0
 #define ARITH_MULT 0x0214
 #define ARITH_DIV 0x0114
@@ -70,6 +69,7 @@ along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
 #define STLB_HIT 0x1049
 #define UNKNOWN_EVENT 0xffff
 
+/* K-LEB parameters */
 typedef struct {
 	int pid;
  	unsigned int counter1;
@@ -95,9 +95,6 @@ int cleanup_timer( void );
 int cleanup_ioctl( void );
 void cleanup_module( void );
 
-#define DO_EXIT_NAME "do_exit"
-#define COPY_PROCESS_NAME "copy_process"
-#define UPROBE_COPY_PROCESS_NAME "uprobe_copy_process"
 #define FINISH_TASK_SWITCH_NAME "finish_task_switch"
 
 #define DEBUG

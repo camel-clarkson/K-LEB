@@ -17,49 +17,48 @@ along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/hrtimer.h> // high res timer
-#include <linux/ktime.h>   // ktime representation
-#include <linux/math64.h>  // div_u64
-#include <linux/slab.h>	// kmalloc
-#include <linux/device.h>  // character devices
-#include <linux/fs.h>	  // file control
+#include <linux/hrtimer.h>	// high res timer
+#include <linux/ktime.h>	// ktime representation
+#include <linux/math64.h>	// div_u64
+#include <linux/slab.h>		// kmalloc
+#include <linux/device.h>	// character devices
+#include <linux/fs.h>		// file control
 #include <linux/cdev.h>
-#include <linux/version.h> // linux version
+#include <linux/version.h>	// linux version
 #include <asm/uaccess.h>
-#include <asm/nmi.h>		   // reserve_perfctr_nmi ...
+#include <asm/nmi.h>		// reserve_perfctr_nmi ...
 #include <asm/perf_event.h>	// union cpuid10...
 #include <asm/special_insns.h> // read and write cr4
 #include "kleb.h"
 
-#include <linux/kprobes.h> // kprobe and jprobe
-#include <linux/sched.h> //finish_task_switch
-// DEBUG
-#include <linux/time.h>
+#include <linux/kprobes.h> 	// kprobe and jprobe
+#include <linux/sched.h> 	//finish_task_switch
 
-#include <linux/mutex.h>
+#include <linux/time.h>
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 36)
 #define UNLOCKED 1
 #endif
 
-MODULE_LICENSE("GPL"); // Currently using the MIT license
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("James Bruska, Caleb DeLaBruere, Chutitep Woralert");
 MODULE_DESCRIPTION("K-LEB: A hardware event recording system with a high resolution timer");
 MODULE_VERSION("0.7.0");
 
+/* Module parameters */
 static struct hrtimer hr_timer;
 static ktime_t ktime_period_ns;
 static unsigned int delay_in_ns;
 static int num_events, num_recordings, counter, timer_restart;
-//static int delay_in_ns, num_events, num_recordings, counter, timer_restart;
 static int target_pid, recording;
 static unsigned int **hardware_events;
 static int Major;
 static kleb_ioctl_args_t kleb_ioctl_args;
+/* For tapping */
+struct cdev *kernel_cdev;
 
+/* Counters parameters */
 static int reg_addr, reg_addr_val, reg_fixed_addr_val, event_num, umask, enable_bits, disable_bits, event_on, event_off;
-//static int counter_arr[4];
-//static int umask_arr[4];
 static int test_counters[4];
 static int addr[4];
 static int addr_fixed;
@@ -67,41 +66,45 @@ static int addr_global;
 static int addr_val[4];
 static int addr_fixed_val[3];
 static long int eax_low, edx_high;
-//For tapping
-struct cdev *kernel_cdev;
-static unsigned int temp_hpc[9];
-
-
-//For context switch on multiple exit
-static int start_init, mul_exit;
-//DEBUG
-//static struct timespec ts1, ts2, ts3, ts4;
-
 long int count_in;
 
+/* Handle context switch & CPU switch */
+static int start_init, mul_exit;
+static unsigned int temp_hpc[9];
 static int fork_check, pc_init;
 static int first_hpc;
 
-static DEFINE_MUTEX(cs_mutex);
-
+/* Initialize counters */
 static long pmu_start_counters(unsigned int counter1, unsigned int counter2, unsigned int counter3, unsigned int counter4, unsigned long long counter_umask, unsigned int user_os_rec)
 {
 	int i = 0;
-	//Assign perfeventsel0-3
-	addr[0] = 0x186;
+
+	/* Assign IA32_FIXED_CTR_CTRL MSR & MSR_PERF_GLOBAL_CTRL MSR */
+	addr_fixed = 0x38d;
+	addr_global = 0x38f;
+
+	/* Setup configurable counters */
+	/* Assign perfeventsel0-3 */
+	addr[0] = 0x186; // IA32_PERFEVTSELx MSRs
 	addr[1] = 0x187;
 	addr[2] = 0x188;
 	addr[3] = 0x189;
 
-	addr_fixed = 0x38d;
-	addr_global = 0x38f;
-
+	//Assign perfctr0-3
+	addr_val[0] = 0xc1; // IA32_PMC MSR // 0xc1 is perfctr0
+	addr_val[1] = 0xc2;
+	addr_val[2] = 0xc3;
+	addr_val[3] = 0xc4;
+	
+	/* Assign events */
 	test_counters[0] = counter1;
 	test_counters[1] = counter2;
 	test_counters[2] = counter3;
 	test_counters[3] = counter4; 
 	
 	printk_d(KERN_INFO "Events: %d %d %d %d\n", counter1, counter2, counter3, counter4);
+
+	/* Define IA32_PERFEVTSELx MSRs parameters */
 	user_os_rec &= 0x01; // Enforces requirement of 0 <= user_os_rec <= 3
 	enable_bits = 0x400000 + (user_os_rec << 16);
 	disable_bits = 0x100000 + (user_os_rec << 16);
@@ -109,14 +112,9 @@ static long pmu_start_counters(unsigned int counter1, unsigned int counter2, uns
 	umask = counter_umask << 8;
 	eax_low = 0x00;
 
-
-	//Assign perfctr0-3
-	addr_val[0] = 0xc1; // MSR_CORE_PERF_GLOBAL_CTRL; // 0xc1 is perfctr0
-	addr_val[1] = 0xc2;
-	addr_val[2] = 0xc3;
-	addr_val[3] = 0xc4;
-	
-	addr_fixed_val[0] = 0x309;
+	/* Setup fixed counters */
+	/* Assign fixedperfctr0-2 */
+	addr_fixed_val[0] = 0x309; //IA32_FIXED_CTR; // 0xc1 is fixedperfctr0
 	addr_fixed_val[1] = 0x30a;
 	addr_fixed_val[2] = 0x30b;
 
@@ -125,14 +123,11 @@ static long pmu_start_counters(unsigned int counter1, unsigned int counter2, uns
 			:
 			: "c"(addr_global), "a"(0x00), "d"(0x00));
 	
+	// ******** SET CONFIGURABLE COUNTERS ********//
 	for (i = 0; i < 4; i++)
 	{
 		reg_addr_val = addr_val[i];
 		reg_addr = addr[i];
-
-		// DEBUG
-		//printk( "event: %d", event_num);
-		//getnstimeofday(&ts1);
 
 		__asm__("wrmsr"
 				:
@@ -171,11 +166,10 @@ static long pmu_start_counters(unsigned int counter1, unsigned int counter2, uns
 		//printk( KERN_INFO "fixed rdmsr [%d] in start:   %ld\n", i, count_in);
 			
 	}
-	//printk( KERN_INFO "hardware_events[0][0]: %d", hardware_events[0][0]);
-	//start_init = 1;
 	return count_in;
 }
 
+/* Disable counting */
 static long pmu_stop_counters(void)
 {
 	long int count = 0;
@@ -183,18 +177,18 @@ static long pmu_stop_counters(void)
 	int countercheck;
 	int copycount = 0;
 
-		//MUTEX
-//		mutex_lock(&cs_mutex);
+	/* Disable counters on global counter control */
 	__asm__("wrmsr"
 			:
 			: "c"(addr_global), "a"(0x00), "d"(0x00));
-	//Check CPU Switch
+
+	/* Check CPU Switch */
 	if(get_cpu() != hardware_events[7][counter - 1]){
-			//For multiple exit
+			/* For multiple consecutive schedule out */
 			if(mul_exit){
 				copycount = 1;
 			}
-			//For CPU switch
+			/* For CPU switch */
 			else{
 					for(i = 0; i < 7; i++){
 						if(i < 4){
@@ -220,6 +214,7 @@ static long pmu_stop_counters(void)
 			}
 	}	
 
+	/* Disable configurable counters */
 	for (i = 0; i < 4; i++)
 	{
 		reg_addr_val = addr_val[i];
@@ -239,47 +234,32 @@ static long pmu_stop_counters(void)
 		
 		//printk(KERN_INFO "Counter Stop [%d][%d] %ld \n", i, counter, count);
 		
-
-		/**********/
-		//if(start_init == 0){
+		/* Copy value over in case of CPU switch */
 		if(copycount){
-			//handle context switch in multiple exit
-			if(counter == 0){
-		
+			/* User tapping data switch */
+			if(counter == 0){	
 				eax_low = temp_hpc[i];
 			}
+			/* Regular switch */
 			else{
 				eax_low = hardware_events[i][counter - 1];
 			}
-
 			__asm__("wrmsr"
 				:
 				: "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
-			//printk_d("COPY Counter[%d]", i);	
-			//printk(KERN_INFO "[%d] ", hardware_events[i][counter-1]);	
 		}
-		
-		//Do num event + 1	
-		//for (x = 0; x < (num_events + 1); ++x)
-		/*********/
 
 		//FOR DEBUGGING - NOTE: Causes inaccuracy of counters when
 		//	enabled due to the overhead of printk
 		//printk( KERN_INFO "rdmsr in:   %ld", count_in);
 		//printk( KERN_INFO "rdmsr out:  %ld", count);
 		//printk( KERN_INFO "rdmsr diff: %ld", count - count_in);
-
-		// DEBUG
-		//printk( "counter at stop: %d\n", counter );
-		//getnstimeofday( &ts2 );
-		//printk( "%ld - \n%ld = \n%ld\n", ts2.tv_nsec, ts1.tv_nsec, ts2.tv_nsec - ts1.tv_nsec);
 	}
-	//if(start_init == 0){
+	/* Copy value over in case of CPU switc for fixed counters */
 	if(copycount){
 		for (i = 0; i < 3; i++)
 		{
 			reg_fixed_addr_val = addr_fixed_val[i];
-			//Handle context swithch
 			if(counter == 0){
 				eax_low = temp_hpc[i+4];
 			}
@@ -288,48 +268,46 @@ static long pmu_stop_counters(void)
 			}
 			__asm__("wrmsr"
 					:
-					: "c"(reg_fixed_addr_val), "a"(eax_low), "d"(edx_high));
-		//	printk_d("COPY Counter[%d]", i+4);	
-			//printk(KERN_INFO "[%d] ", hardware_events[i+4][counter-1]);	
-			
-				
+					: "c"(reg_fixed_addr_val), "a"(eax_low), "d"(edx_high));		
 		}
-		//printk(KERN_INFO "Copy Counter[%d]:  [%d][%d][%d][%d][%d][%d][%d]\n",counter-1, hardware_events[0][counter-1],hardware_events[1][counter-1],hardware_events[2][counter-1],hardware_events[3][counter-1],hardware_events[4][counter-1],hardware_events[5][counter-1],hardware_events[6][counter-1]);	
 	}
-	// ******** SET FIXED COUNTERS ********//
+	/* Disable fixed counters */
 	__asm__("wrmsr"
 			:
 			: "c"(addr_fixed), "a"(0x000), "d"(0x00)); //disable:0 OS:1 User:2 Both:3
-	//start_init = 0;
+
 	mul_exit=1;
-//	mutex_unlock(&cs_mutex);
 	return count;
 }
 
+/* Enable counting */
 static long pmu_restart_counters(void)
 {
 	int i = 0;
 	edx_high = 0x00;
 
+	/* Enable counters on global counter control  */
 	__asm__("wrmsr"
 			:
 			: "c"(addr_global), "a"(0x0f), "d"(0x07)); //4 HPCs 3 Fixed HPC
 
-	//printk(KERN_INFO "Counter: %d", counter);
-	
-	if(pc_init == 1){
+	/* Initialize first temp_hpc */
+	if(pc_init){
 		for(i=0; i < (num_events + 1); i++)
 			temp_hpc[i] = 0;
-		//hardware_events[i][-1] = 0;
 		pc_init = 0;
-
 	}
-	//start_init=1;
-	//cs_lock=1;
+
+	/* Enable configuration counters */
 	for (i = 0; i < 4; i++)
 	{
-		
-		//write last counter to PMU to keep value between CPU switch
+		reg_addr_val = addr_val[i];
+		reg_addr = addr[i];
+		event_num = test_counters[i];
+		event_on = event_num | umask | enable_bits;
+		event_off = event_num | umask | disable_bits;
+
+		/* Write last counter to PMU to keep value between CPU switch */
 		if(counter == 0){
 		
 			eax_low = temp_hpc[i];
@@ -337,31 +315,23 @@ static long pmu_restart_counters(void)
 		else{
 			eax_low = hardware_events[i][counter - 1];
 		}
-		//printk(KERN_INFO "value[%d]: %d\n",i ,eax_low);
-		reg_addr_val = addr_val[i];
-		reg_addr = addr[i];
-		event_num = test_counters[i];
-		event_on = event_num | umask | enable_bits;
-		event_off = event_num | umask | disable_bits;
-		//Write value to counter to handle context switch
 		__asm__("wrmsr"
 				:
 				: "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
+
 		//Read for debugging
 		/*__asm__("rdmsr"
 				: "=a"(eax_low), "=d"(edx_high)
 				: "c"(reg_addr_val));
 		count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		//printk( KERN_INFO "rdmsr reset:   %ld", count_in);
-
-		
-		printk(KERN_INFO "Counter Restart [%d][%d] %ld \n", i, counter, count_in);*/
+		printk( KERN_INFO "rdmsr reset:   %ld", count_in);*/
+		/* Enable counting */
 		__asm__("wrmsr"
 				:
 				: "c"(reg_addr), "a"(event_on), "d"(0x00));
 	}
 
-	// ******** SET FIXED COUNTERS ********//
+	/* Enable fixed counters */
 	__asm__("wrmsr"
 			:
 			: "c"(addr_fixed), "a"(0x222), "d"(0x00)); //disable:0 OS:1 User:2 Both:3
@@ -369,15 +339,14 @@ static long pmu_restart_counters(void)
 	for (i = 0; i < 3; i++)
 	{
 		reg_fixed_addr_val = addr_fixed_val[i];
-		//Handle context swithch
-		//printk(KERN_INFO "[%d][%d]\n", i+4, counter-1);
+
+		/* Write last counter to PMU to keep value between CPU switch */
 		if(counter == 0){
 			eax_low = temp_hpc[i+4];
 		}
 		else{
 			eax_low = hardware_events[i+4][counter - 1];
 		}
-		//printk(KERN_INFO "value[%d]: %d\n",i+4 ,eax_low);
 		__asm__("wrmsr"
 				:
 				: "c"(reg_fixed_addr_val), "a"(eax_low), "d"(edx_high));
@@ -388,17 +357,17 @@ static long pmu_restart_counters(void)
 
 		count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
 		printk( KERN_INFO "fixed rdmsr [%d] in restart:   %ld", i, count_in);*/
-			
 	}
-	//cs_lock=0;
 	mul_exit=0;
 	return reg_addr_val;
 }
 
+/* Read counters value */
 static long pmu_read_counters(void)
 {
 	long int count;
 	int i = 0;
+	/* Read configuration counters */
 	for (i = 0; i < 4; i++)
 	{
 		reg_addr_val = addr_val[i];
@@ -412,148 +381,102 @@ static long pmu_read_counters(void)
 				: "=a"(eax_low), "=d"(edx_high)
 				: "c"(reg_addr_val));
 		count = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		//printk( KERN_INFO "rdmsr [%d][%d] read:   %ld\n", i, counter, count);
-		
-		
-		hardware_events[i][counter] = count;
-		
+
+		hardware_events[i][counter] = count;	
 	}
 
-	// ******** SET FIXED COUNTERS ********//
+	/* Read fixed counters */
 	for (i = 0; i < 3; i++)
 	{
-			reg_fixed_addr_val = addr_fixed_val[i];
+		reg_fixed_addr_val = addr_fixed_val[i];
 
 		__asm__("rdmsr"
 				: "=a"(eax_low), "=d"(edx_high)
 				: "c"(reg_fixed_addr_val));
-
 		count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		//printk( KERN_INFO "fixed rdmsr [%d] in read:   %ld", i, count_in);
 		
 		hardware_events[i+4][counter] = count_in;
-
 	}
 		
-	//getnstimeofday(&ts4);
-	//hardware_events[num_events - 1][counter] = ts4.tv_nsec - ts3.tv_nsec;
 	hardware_events[num_events-1][counter] = get_cpu();
-	//hardware_events[num_events-1][counter] = current->on_cpu;
 	hardware_events[num_events][counter] = current->pid;
-	//hardware_events[num_events][counter] = 0;
-
-	//ts3.tv_nsec = ts4.tv_nsec;
-
 
 	return count;
 }
 
-int kprobes_handle_do_exit(struct kprobe *p, struct pt_regs *regs)
-{
-	if (timer_restart)
-	{
-		//printk_d("******** In kprobes_handle_do_exit() *******\n");
-		if (current->pid == target_pid){	
-		//printk_d("In exit Show task_current [%s] PID: [%d] STATE: [%ld]\n",current->comm,current->pid, current->state);
-				//printk(KERN_INFO "********** In Kprobe handle do exit **********\n Target [%d]\n PID: [%s][%d][%ld]\n PPID: [%s][%d][%ld]\n Counter[%d] CPU[%d] S_I[%d] PC_I[%d]\n", target_pid, current->comm, current->pid, current->state, current->parent->comm,current->parent->pid, current->parent->state, counter, get_cpu(), start_init, pc_init);
-		//printk_d("Show task_parent [%s] PID: [%d] STATE: [%ld]\n",current->parent->comm,current->parent->pid, current->parent->state);
-		/*				printk_d("********** In exit CANCEL hrtimer **********\n");
-						
-						hrtimer_cancel(&hr_timer);
-						
-						pmu_stop_counters();
-						timer_restart = 0;
-//						printk_d("Timer out: jprobes_handle_finish_task_switch() [%s][%d] -> [%s][%d]\n", prev->comm, prev->pid,current->comm ,current->pid);
-						if (counter < num_recordings)
-						{
-							pmu_read_counters();
-							hardware_events[num_events][counter] = current->pid;
-				printk_d("Counter: %d\n",counter);
-				printk_d("Count: %d\n", hardware_events[num_events][counter-8]);				
-							//hardware_events[num_events][counter] = 3;
-							++counter;
-						}*/
-		}
-	}
-	return 0;
-}
-
-int kprobes_handle_copy_process(struct kprobe *p, struct pt_regs *regs)
-{
-	if (timer_restart)
-	{
-		//printk_d("********* In kprobes_handle_copy_process() *******\n");
-		/*if (current->pid == target_pid)	{
-		printk_d("In copy Show task_current [%s] PID: [%d] STATE: [%ld]\n",current->comm,current->pid, current->state);
-			printk_d("Show task_parent [%s] PID: [%d] STATE: [%ld]\n",current->parent->comm,current->parent->pid, current->parent->state);
-		}*/
-	}
-	return 0;
-}
-
+/* Track process through context switch */
+#ifdef UNLOCKED
 struct rq *jprobes_handle_finish_task_switch(struct task_struct *prev)
-//void jprobes_handle_finish_task_switch(struct rq *rq, struct task_struct *prev)
+#else
+void jprobes_handle_finish_task_switch(struct rq *rq, struct task_struct *prev)
+#endif
 {
-	//int i;
-	
 	if(recording && (counter < num_recordings) && start_init)
-	{ // TODO: rm 2nd cond
-		
+	{
+		/* Process schedule in */
 		if (current->pid == target_pid)
 		{
 			timer_restart = 1;
-			
+
+			/* Enable counters */
 			pmu_restart_counters();
-			//For first line 	
+
+			/* First counter values */ 	
 			if (counter < num_recordings && first_hpc == 0)
 			{
 				pmu_read_counters();
 				++counter;
 				++first_hpc;
 			}
+
+			/* Start timer */
 			ktime_period_ns = ktime_set(0, delay_in_ns);
-			//ktime_period_ns = ktime_set(0, 100000L);
 			hrtimer_start(&hr_timer, ktime_period_ns, HRTIMER_MODE_REL);
 		}
-
-
+		/* Detect fork process */
 		else if (current->parent->pid == target_pid)
-		//else if (current->parent->pid == target_pid && current->state == 0)
 		{
-				
 				fork_check++;
 				timer_restart=1;
-				target_pid = current->pid;
-				//printk_d("F: Swapping target_pid to PID: [%d]\n",target_pid);
-				pmu_restart_counters();
-				ktime_period_ns = ktime_set(0, delay_in_ns);
-				//ktime_period_ns = ktime_set(0, 100000L);
 
+				/* Swap process to monitor to child */
+				target_pid = current->pid;
+
+				//DEBUG
+				//printk_d("F: Swapping target_pid to PID: [%d]\n",target_pid);
+
+				/* Enable counters */
+				pmu_restart_counters();
+
+				/* Start timer */
+				ktime_period_ns = ktime_set(0, delay_in_ns);
 				hrtimer_start(&hr_timer, ktime_period_ns, HRTIMER_MODE_REL);
 		}
-
+		/* Process schedule out */
 		else if (prev->pid == target_pid)
 		{
 			if(pc_init){
-				printk(KERN_INFO "********** Exit Before Start **********\n Target [%d]\n PID: [%s][%d][%ld]\n PPID: [%s][%d][%ld]\n PREV: [%s][%d][%ld]->[%s][%d][%ld]\n Counter[%d] CPU[%d] S_I[%d] PC_I[%d]\n", target_pid, current->comm, current->pid, current->state, current->parent->comm,current->parent->pid, current->parent->state, prev->comm, prev->pid, prev->state, current->comm, current->pid, current->state, counter, get_cpu(), start_init, pc_init);
-				
-				
+				//DEBUG
+				//printk(KERN_INFO "********** Exit Before Start **********\n Target [%d]\n PID: [%s][%d][%ld]\n PPID: [%s][%d][%ld]\n PREV: [%s][%d][%ld]->[%s][%d][%ld]\n Counter[%d] CPU[%d] S_I[%d] PC_I[%d]\n", target_pid, current->comm, current->pid, current->state, current->parent->comm,current->parent->pid, current->parent->state, prev->comm, prev->pid, prev->state, current->comm, current->pid, current->state, counter, get_cpu(), start_init, pc_init);
 			}
 			else
 			{
-			
+				/* Process has forked */
 				if(fork_check!=0)
 				{
-				//FORK
+					/* Child exit & Detect parent has already exited child attach to systemd pid 1 */
 					if (prev->state == 64 && prev->parent->pid == 1)
-					//if (prev->state > 0 && prev->parent->pid == 1)
 					{
-						//Parent already exit child attach to systemd pid 1
-						
+						/* Cancel timer */
 						hrtimer_cancel(&hr_timer);
+
+						/* Disable counters */
 						pmu_stop_counters();
+
 						timer_restart = 0;
 						fork_check--;
+
+						/* Read counters */
 						if (counter < num_recordings)
 						{
 							pmu_read_counters();	
@@ -561,69 +484,71 @@ struct rq *jprobes_handle_finish_task_switch(struct task_struct *prev)
 							++counter;
 						}
 					}
+					/* Child exit & Detect parent still running */
 					else if (prev->state == 64 && prev->parent->pid!=1)
-					//else if (prev->state > 0 && prev->parent->pid!=1)
 					{
-						
-						//Parent still running state 1			
+						/* Swap process to monitor to parent */	
 						target_pid = prev->parent->pid;
-						fork_check--;
-						hrtimer_cancel(&hr_timer);
-						pmu_stop_counters();
-						timer_restart = 0;
-						if (counter < num_recordings)
-						{
-							pmu_read_counters();
-							hardware_events[num_events][counter] = prev->pid;	
-							++counter;
-						}
-					}
-					else{
-						//printk_d("********** Do nothing in fork **********");
-						
-						hrtimer_cancel(&hr_timer);
-						pmu_stop_counters();
-						timer_restart = 0;
-						if (counter < num_recordings)
-						{
-							pmu_read_counters();
-							hardware_events[num_events][counter] = prev->pid;	
-							++counter;
-						}
-					}
-			}
-			else{
-			// NO FORK
 
+						/* Cancel timer */
 						hrtimer_cancel(&hr_timer);
-						
+
+						/* Disable counters */
 						pmu_stop_counters();
+
 						timer_restart = 0;
+						fork_check--;
+
+						/* Read counters */
 						if (counter < num_recordings)
 						{
 							pmu_read_counters();
 							hardware_events[num_events][counter] = prev->pid;	
 							++counter;
 						}
-						
-			}//fork_check
-			}//pc_init check
+					}
+					/* Child schedule out */
+					else{
+						/* Cancel timer */
+						hrtimer_cancel(&hr_timer);
+						/* Disable counters */
+						pmu_stop_counters();
+
+						timer_restart = 0;
+
+						/* Read counters */
+						if (counter < num_recordings)
+						{
+							pmu_read_counters();
+							hardware_events[num_events][counter] = prev->pid;	
+							++counter;
+						}
+					}
+				}
+				/* Process schedule out */
+				else{
+					/* Cancel timer */
+					hrtimer_cancel(&hr_timer);
+
+					/* Disable counters */		
+					pmu_stop_counters();
+
+					timer_restart = 0;
+
+					/* Read counters */
+					if (counter < num_recordings)
+					{
+						pmu_read_counters();
+						hardware_events[num_events][counter] = prev->pid;	
+						++counter;
+					}
+				}
+			}
 		}
 	}
-			jprobe_return();
-	//should not get here
+	jprobe_return();
 	return (NULL);
 }
-
-static struct kprobe do_exit_kp = {
-	.pre_handler = kprobes_handle_do_exit,
-	.symbol_name = DO_EXIT_NAME,
-};
-
-static struct kprobe copy_process_kp = {
-	.pre_handler = kprobes_handle_copy_process,
-	.symbol_name = COPY_PROCESS_NAME,
-};
 
 static struct jprobe finish_task_switch_jp = {
 	.entry = jprobes_handle_finish_task_switch,
@@ -632,48 +557,13 @@ static struct jprobe finish_task_switch_jp = {
 
 void unregister_all(void)
 {
-	unregister_kprobe(&do_exit_kp);
-	unregister_kprobe(&copy_process_kp);
 	unregister_jprobe(&finish_task_switch_jp);
 }
 
 int register_all(void)
 {
-	//here we will try two things
-	// 1. We will try to use a jprobe on "finish_task_switch" so we can access
-	//    the prev task pointer that is passed in. We can use that to compare
-	//    with current to see where we are.
-	// 2. We will also use a kprobe on fork or "copy_process" which we will just
-	//    assume works fine.
-//	int ret;
-	int ret = register_kprobe(&do_exit_kp);
-	if (ret < 0)
-	{
-		printk(KERN_INFO "Couldn't register 'do_exit' kprobe\n");
-		unregister_all();
-		return (-EFAULT);
-	}
-
-	//TODO: consider removing copy_process in the first place.
-	ret = register_kprobe(&copy_process_kp);
-	if (ret < 0)
-	{
-		//On one of my machines, the name for copy_process in kallsyms was copy_process.
-		//  part.27 -- it had a suffix. An alternative would be uprobe_copy_process
-		//  which is called at the end of the copy_process function on success.
-		printk(KERN_INFO "Couldn't register 'copy_process' kprobe\n");
-		printk(KERN_INFO "  Trying to register 'uprobe_copy_process' kprobe\n");
-		copy_process_kp.symbol_name = UPROBE_COPY_PROCESS_NAME;
-		ret = register_kprobe(&copy_process_kp);
-		if (ret < 0)
-		{
-			printk(KERN_INFO "  That didn't work either\n");
-			unregister_all();
-			return (-EFAULT);
-		}
-	}
-
-	ret = register_jprobe(&finish_task_switch_jp);
+	/* Register probes */
+	int ret = register_jprobe(&finish_task_switch_jp);
 	if (ret < 0)
 	{
 		printk(KERN_INFO "Couldn't register 'finish_task_switch' jprobe\n");
@@ -681,29 +571,28 @@ int register_all(void)
 		return (-EFAULT);
 	}
 
-	//printk_d("finish_task_switch @ [%p], do_exit @ [%p], copy_process @ [%p]\n", finish_task_switch_jp.kp.addr, do_exit_kp.addr, copy_process_kp.addr);
-
 	return (0);
 }
 
-// -----------------------------------------------------------------------------------------------
-
+/* Restart timer */
 enum hrtimer_restart hrtimer_callback(struct hrtimer *timer)
 {
 	ktime_t kt_now;
 
-
+	/* Restart timer */
 	if (timer_restart && (counter < num_recordings))
 	{
-		
+		/* Read counter */
 		pmu_read_counters();
-		
 		++counter;
+
+		/* Forward timer */
 		kt_now = hrtimer_cb_get_time(&hr_timer);
 		hrtimer_forward(&hr_timer, kt_now, ktime_period_ns);
 
 		return HRTIMER_RESTART;
 	}
+	/* No restart timer */
 	else
 	{
 		if (!timer_restart)
@@ -718,6 +607,7 @@ enum hrtimer_restart hrtimer_callback(struct hrtimer *timer)
 	}
 }
 
+/* Initialize module from ioctl start */
 int start_counters( unsigned int pmu_counter1, unsigned int pmu_counter2, unsigned int pmu_counter3, unsigned int pmu_counter4, unsigned long long pmu_counter_umask, unsigned int pmu_user_os_rec)
 {
 	int i, j;
@@ -727,17 +617,19 @@ int start_counters( unsigned int pmu_counter1, unsigned int pmu_counter2, unsign
 		recording = 1;
 		timer_restart = 1;
 		counter = 0;
+
+		/* Set empty buffer */
 		for (i = 0; i < (num_events + 1); ++i)
-		{ // reset values
+		{ 
 			for (j = 0; j < num_recordings; ++j)
 			{
 				hardware_events[i][j] = -10;
-				//printk(KERN_INFO "write hardware_events[%d][-1] = %d",i ,hardware_events[i][-1]);
 			}
 		}
 
-
+		/* Initialize counters */
 		pmu_start_counters(pmu_counter1, pmu_counter2, pmu_counter3, pmu_counter4, pmu_counter_umask, pmu_user_os_rec);
+
 		fork_check=0;
 		pc_init=1;
 		start_init=1;
@@ -751,57 +643,13 @@ int start_counters( unsigned int pmu_counter1, unsigned int pmu_counter2, unsign
 
 	return 0;
 }
-//Unuse 
-int dump_counters()
-{
-	int x, y;
-	int i = 0;
-	if(recording){
-		
-		//printk("Counter INT: %d On CPU: %d\n", counter, get_cpu());
-		//Read and save latest HPC
-		if(counter != 0){		
-			for (i = 0; i < num_events + 1; i++)
-			{
-			//	printk(KERN_INFO "HPC[%d][%d]: |%d| ", i, counter-1, hardware_events[i][counter-1]);
-				temp_hpc[i]=hardware_events[i][counter-1];
-			}
-		
-			counter = 0;
-		
-			for (x = 0; x < (num_events + 1); ++x)
-			{ // reset values
-				for (y = 0; y < num_recordings; ++y)
-				{
-					hardware_events[x][y] = -10;
-					//printk(KERN_INFO "write hardware_events[%d][-1] = %d",i ,hardware_events[i][-1]);
-				}
-			}
-		}
-		else
-		{
-			/*for (i = 0; i < num_events + 1; i++)	                    
-			{
-				temp_hpc[i]=-10;
-			}*/
-			for (x = 0; x < (num_events + 1); ++x)
-			{ // reset values
-				for (y = 0; y < num_recordings; ++y)
-				{
-					hardware_events[x][y] = -10;
-					//printk(KERN_INFO "write hardware_events[%d][-1] = %d",i ,hardware_events[i][-1]);
-				}
-			}
-		}
 
-		printk("Counter AFTER INT: %d\n", counter);
-	}
-	return 0;
-}
+/* Deinitialize module from ioctl stop */
 int stop_counters()
 {
+	/* Stop counters */
 	pmu_stop_counters();
-//	pmu_read_counters();
+
 	recording = 0;
 	timer_restart = 0;
 	pc_init = 1;
@@ -810,13 +658,8 @@ int stop_counters()
 	start_init=0;
 	mul_exit=0;
 
-	//MUTEX
-	//mutex_destroy(&cs_mutex);
-	//cs_lock=0;
 	return 0;
 }
-
-// -----------------------------------------------------------------------------------------------
 
 int open(struct inode *inode, struct file *fp)
 {
@@ -824,99 +667,51 @@ int open(struct inode *inode, struct file *fp)
 	return 0;
 }
 
+/* Read for extract data to user */
 ssize_t read(struct file *filep, char *buffer, size_t len, loff_t *offset)
 {
 	int size_of_message = num_recordings * (num_events + 1) * sizeof(unsigned int);
 	int size_of_realmessage = counter * (num_events + 1) * sizeof(unsigned int);
-	//int error_count = copy_to_user(buffer, hardware_events[0], size_of_message);
 	int error_count = 0;
-	/*********/
-	/*int error_count;
-	if(counter == 0){
-		
-		printk(KERN_INFO "There is nothing to be sent!!\n");
-		if (error_count == 0)
-		{
-			printk(KERN_INFO "Sent %d characters to the user\n", size_of_message);
-			return (size_of_message == 0);
-		}
-		else
-		{
-			printk(KERN_INFO "Failed to send %d characters to the user\n", error_count);
-			return -EFAULT;
-		}
-	}
-	else{
-		
-		error_count = copy_to_user(buffer, hardware_events[0], size_of_message);
-		if (error_count == 0)
-		{
-			printk(KERN_INFO "Sent %d characters to the user\n", size_of_message);
-			return (size_of_message == 0);
-		}
-		else
-		{
-			printk(KERN_INFO "Failed to send %d characters to the user\n", error_count);
-			return -EFAULT;
-		}
-	}*/
-	/*******/
 	int x, y;
 	int i = 0;
+
+	/* For periodic data extraction */
 	if(recording){
 		//FOR DEBUG
 		//printk("Counter INT: %d On CPU: %d\n", counter, get_cpu());
-		//Read and save latest HPC
+		/* Read and save latest HPC */
 		if(counter != 0){		
 			for (i = 0; i < num_events + 1; i++)
 			{
-				//hardware_events[i][0] = hardware_events[i][counter-1];
-				//printk(KERN_INFO "HPC[%d][%d]: |%d| ", i, counter-1, hardware_events[i][counter-1]);
 				temp_hpc[i]=hardware_events[i][counter-1];
 			}
-			//Move copy to here to minimize the gap between count when new timer start
+
+			/* Send data to user */
 			error_count = copy_to_user(buffer, hardware_events[0], size_of_message);
 			counter = 0;
-		
+
+			/* Reset buffer value */
 			for (x = 0; x < (num_events + 1); ++x)
-			{ // reset values
+			{ 
 				for (y = 0; y < num_recordings; ++y)
 				{
 					hardware_events[x][y] = -10;
-					//printk(KERN_INFO "write hardware_events[%d][-1] = %d",i ,hardware_events[i][-1]);
 				}
 			}
 		}
-		//Case no data to be send
-		else
-		{
-			//error_count = copy_to_user(buffer, hardware_events[0], size_of_message);
-			/*for (i = 0; i < num_events + 1; i++)	                    
-			{
-				temp_hpc[i]=-10;
-			}*/
-			/*for (x = 0; x < (num_events + 1); ++x)
-			{ // reset values
-				for (y = 0; y < num_recordings; ++y)
-				{
-					hardware_events[x][y] = -10;
-					//printk(KERN_INFO "write hardware_events[%d][-1] = %d",i ,hardware_events[i][-1]);
-				}
-			}*/
-		}
-
-		//printk("Counter AFTER INT: %d\n", counter);
 	}
-	//for calling stop
+	/* For exit data extraction */
 	else	
 	{
 		error_count = copy_to_user(buffer, hardware_events[0], size_of_message);
 	}
-	/********/
+
+	/* Check data extraction size */
 	if (error_count == 0 && size_of_realmessage != 0)
 	{
-		////printk(KERN_INFO "Sent %d characters to the user\n", size_of_realmessage);
-		//return (size_of_message == 0);
+		//DEBUG
+		//printk(KERN_INFO "Sent %d characters to the user\n", size_of_realmessage);
 		return (size_of_realmessage);
 	}
 	else if(error_count == 0 && size_of_realmessage == 0){
@@ -943,7 +738,6 @@ int ioctl_funcs(struct inode *inode, struct file *fp, unsigned int cmd, unsigned
 #endif
 {
 	int ret = 0;
-
 	kleb_ioctl_args_t *kleb_ioctl_args_user = (kleb_ioctl_args_t *)(arg);
 
 	if (kleb_ioctl_args_user == NULL)
@@ -952,10 +746,12 @@ int ioctl_funcs(struct inode *inode, struct file *fp, unsigned int cmd, unsigned
 		return (-EINVAL);
 	}
 	else{
-	//printk(KERN_INFO "************ Catch IOCTL ***********\n");
-	//printk(KERN_INFO "%u\n", cmd);
+		//DEBUG
+		//printk(KERN_INFO "************ Catch IOCTL ***********\n");
+		//printk(KERN_INFO "%u\n", cmd);
 	}
-	//copy the values from userspace
+
+	/* Read the parameters from userspace */
 	if (copy_from_user(&kleb_ioctl_args, kleb_ioctl_args_user, sizeof(kleb_ioctl_args_t)) != 0)
 	{
 		printk_d("lprof_ioctl: Could not copy cmd from userspace\n");
@@ -964,36 +760,39 @@ int ioctl_funcs(struct inode *inode, struct file *fp, unsigned int cmd, unsigned
 
 	switch (cmd)
 	{
-	case IOCTL_DEFINE_COUNTERS:
-		printk(KERN_INFO "This will define the counters\n");
+		case IOCTL_DEFINE_COUNTERS:
+			printk(KERN_INFO "This will define the counters\n");
+			break;
+		/* Start command */
+		case IOCTL_START:
+			printk(KERN_INFO "Starting counters\n");
+			target_pid = kleb_ioctl_args.pid;
+			delay_in_ns = kleb_ioctl_args.delay_in_ns;
+			printk(KERN_INFO "target pid: %d\n", (int)target_pid);
+			//DEBUG
+			//printk(KERN_INFO "%d %d %d %d %llu %d\n",kleb_ioctl_args.counter1, kleb_ioctl_args.counter2, kleb_ioctl_args.counter3,kleb_ioctl_args.counter4, kleb_ioctl_args.counter_umask, kleb_ioctl_args.user_os_rec);
+			start_counters(kleb_ioctl_args.counter1, kleb_ioctl_args.counter2, kleb_ioctl_args.counter3,kleb_ioctl_args.counter4, kleb_ioctl_args.counter_umask, kleb_ioctl_args.user_os_rec);
+			break;
+		case IOCTL_DUMP:
+			printk(KERN_INFO "This will dump the counters\n");
 		break;
-	case IOCTL_START:
-		printk(KERN_INFO "Starting counters\n");
-		target_pid = kleb_ioctl_args.pid;
-		delay_in_ns = kleb_ioctl_args.delay_in_ns;
-		printk(KERN_INFO "target pid: %d\n", (int)target_pid);
-		//printk(KERN_INFO "%d %d %d %d %llu %d\n",kleb_ioctl_args.counter1, kleb_ioctl_args.counter2, kleb_ioctl_args.counter3,kleb_ioctl_args.counter4, kleb_ioctl_args.counter_umask, kleb_ioctl_args.user_os_rec);
-		start_counters(kleb_ioctl_args.counter1, kleb_ioctl_args.counter2, kleb_ioctl_args.counter3,kleb_ioctl_args.counter4, kleb_ioctl_args.counter_umask, kleb_ioctl_args.user_os_rec);
-		break;
-	case IOCTL_DUMP:
-		dump_counters();
-		break;
-	case IOCTL_STOP:
-		printk(KERN_INFO "Stopping counters\n");
-		stop_counters();
-		break;
-	case IOCTL_DELETE_COUNTERS:
-		printk(KERN_INFO "This will delete the counters\n");
-		break;
-	case IOCTL_DEBUG:
-		printk(KERN_INFO "This will set up debug mode\n");
-		break;
-	case IOCTL_STATS:
-		printk(KERN_INFO "This will set up profiling mode\n");
-		break;
-	default:
-		printk(KERN_INFO "Invalid command\n");
-		break;
+		/* Stop command */
+		case IOCTL_STOP:
+			printk(KERN_INFO "Stopping counters\n");
+			stop_counters();
+			break;
+		case IOCTL_DELETE_COUNTERS:
+			printk(KERN_INFO "This will delete the counters\n");
+			break;
+		case IOCTL_DEBUG:
+			printk(KERN_INFO "This will set up debug mode\n");
+			break;
+		case IOCTL_STATS:
+			printk(KERN_INFO "This will set up profiling mode\n");
+			break;
+		default:
+			printk(KERN_INFO "Invalid command\n");
+			break;
 	}
 
 	return ret;
@@ -1021,14 +820,10 @@ int initialize_memory()
 
 	printk("Memory initializing\n");
 
-	// OpenSSL takes about 19ms. Lets increase this to 50ms for safety.
-	// To get 500 time counts, we will use use a 1ms counter.
-	//delay_in_ns = 1E5L;
 	num_recordings = 500;
-	//num_recordings = div_u64(1E7L, delay_in_ns); // Holds 100ms worth of data
-
 	num_events = 8;
 
+	/* Create data buffer */
 	hardware_events = kmalloc((num_events + 1) * sizeof(unsigned int *), GFP_KERNEL);
 	hardware_events[0] = kmalloc((num_events + 1) * num_recordings * sizeof(unsigned int), GFP_KERNEL);
 	for (i = 0; i < (num_events + 1); ++i)
@@ -1114,8 +909,6 @@ int init_module(void)
 	{
 		return (ret);
 	}
-
-	printk("Starting timer to callback in %dns\n", delay_in_ns);
 
 	printk("K-LEB module initialized\n");
 	return 0;
