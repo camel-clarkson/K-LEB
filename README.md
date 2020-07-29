@@ -62,7 +62,7 @@ Example of a sucessful run:
 
 ![](Images/RunExample.png)
 
-Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when then thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
+Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
 
 
 - After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
@@ -75,7 +75,7 @@ Here is what the output file may look like:
 
 Run initialize.sh using the configuration file perf.cfg for events selection
 
-##### ex perf.cfg:
+#####  perf.cfg:
 
 > \<HPC Event1\> <br>
 \<HPC Event2\> <br>
@@ -105,7 +105,7 @@ After finish monitoring, HPC data is logged and stored in Output.csv in the curr
 
 # Unload the Module
 
-### Unload With Comand Line
+### Unload with Command Line
 
 - Run the following commands:
 ```
