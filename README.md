@@ -31,6 +31,12 @@ dmesg
 sudo mknod /dev/kleb c <major number> 0
 ```
 
+- To get your device's major number you can run:
+```
+dmesg | grep -i major
+```
+![](Images/MajorNumber.png)
+
 ### Apply the module (with the script):
 -  Run: 
 ```
@@ -52,7 +58,11 @@ Users can specify the program to monitor using \<Program PATH\> or \<Program PID
 
 Users can specify the hardware events they want to monitor.
 
-Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when then thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
+Example of a sucessful run:
+
+![](Images/RunExample.png)
+
+Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
 
 
 - After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
@@ -65,7 +75,7 @@ Here is what the output file may look like:
 
 Run initialize.sh using the configuration file perf.cfg for events selection
 
-##### ex perf.cfg:
+#####  perf.cfg:
 
 > \<HPC Event1\> <br>
 \<HPC Event2\> <br>
@@ -88,17 +98,14 @@ sudo bash initialize.sh
 
 Shown here is what a successful run will look like:
 
-![](Images/Runstart.png)
+![](Images/UseScript.png)
 
-Here is what it will look like when it is done monitoring:
-
-![](Images/StopMonitoring.png)
 
 After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
 # Unload the Module
 
-### Unload With Comand Line
+### Unload with Command Line
 
 - Run the following commands:
 ```
