@@ -70,26 +70,6 @@ Here is what the output file may look like:
 
 ![](Images/output.png)
 
-### Monitoring a running program
-
-To monitor the on-running programs such as web servers, Docker containers, etc. User can pass the program process id to K-LEB.
-
-#### How to obtain the process id
-
-- For Docker container
-```
-docker top <container name>
-```
-
-![](Images/docker.png)
-
-- For other programs:
-```
-pgrep <process name>
-```
-
-![](Images/pgrep.png)
-
 ### Use the module (with the script)
 
 Run initialize.sh using the configuration file perf.cfg for events selection
@@ -105,10 +85,6 @@ Users can change the perf.cfg file to select the hardware events they want to mo
 
 Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
 
-Here is an example of a run from the script:
-
-![](Images/comandLine.png)
-
 To start monitoring using the kernel module, run:
 ```
 sudo bash initialize.sh
@@ -119,13 +95,36 @@ sudo bash initialize.sh
 
 - Select program to monitor using \<Program PATH\> or \<Program PID\>, as well as supply program parameters, if applicable. 
 
-Shown here is what a successful run will look like:
+Here is an example of a run from the script:
 
 ![](Images/UseScript.png)
 
 After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
-Press Ctrl+C to stop monitoring and log data
+### Monitoring a running program
+
+To monitor the on-running programs such as web servers, Docker containers, etc. User can pass the program process id to K-LEB.
+
+#### How to obtain the process id
+
+- For Docker container:
+```
+docker top <container name>
+```
+
+![](Images/docker.png)
+
+- For other programs:
+```
+pgrep <process name>
+```
+
+![](Images/pgrep.png)
+
+Here is an example of a run using program process id:
+![](Images/comandLine.png)
+
+Press Ctrl+C to stop monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>:
 
 ![](Images/CrtlC.png)
 
