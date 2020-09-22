@@ -153,4 +153,4 @@ sudo bash initialize.sh
 
 For more technical details please refer to the following paper:
 
-Chutitep Woralert, James Bruska, Chen Liu, and Lok Yan, "High Frequency Performance Monitoring via Architectural Event Measurement", In IEEE International Symposium on Workload Characterization, 2020.
+- Chutitep Woralert, James Bruska, Chen Liu, and Lok Yan, "High Frequency Performance Monitoring via Architectural Event Measurement", In IEEE International Symposium on Workload Characterization, 2020.
