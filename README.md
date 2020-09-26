@@ -152,5 +152,11 @@ sudo bash initialize.sh
 # Citing
 
 For more technical details please refer to the following paper:
-
-- Chutitep Woralert, James Bruska, Chen Liu, and Lok Yan, "High Frequency Performance Monitoring via Architectural Event Measurement", In IEEE International Symposium on Workload Characterization, 2020.
+```
+@inproceedings{ woralert2020hpc,
+       author={Woralert, Chutitep and Bruska, James and Liu, Chen and Yan, Lok},
+       title={High Frequency Performance Monitoring via Architectural Event Measurement},
+       booktitle={IEEE International Symposium on Workload Characterization},
+       year={2020}
+       }
+```
