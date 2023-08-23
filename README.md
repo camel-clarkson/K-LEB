@@ -8,10 +8,10 @@
 3. The ability to monitor events periodically with a high-resolution kernel timer
 
 ## Supported Kernel
-Linux Kernel 4.13.0-15 and earlier
+The current build is tested on Linux Kernel 6.2.0-26 and earlier
 
 ## Supported Processors
-Currently K-LEB supports Intel/x86 processors with hardware performance counters only
+This version of K-LEB supports Intel/x86 processors up to core i7 with hardware performance counters
 
 # Setup
 
@@ -51,14 +51,14 @@ sudo bash initialize.sh
 
 - To start monitoring using the kernel module, run the following bash command:
 ```
-sudo ./ioctl_start <Event1> <Event2> <Event3> <Event4> <timer delay (in ms)> <Log path> <program path>
+sudo ./ioctl_start -e <Event1>,<Event2>,<Event3>,<Event4> -t <timer delay (in ms)> -o <Log path> <program path>
 ```
 
 Users can specify the program to monitor using \<Program PATH\> or \<Program PID\>, as well as supply program parameters, if applicable.
-
+Users can specify the whole system monitoring by using option -a
 Users can specify the hardware events they want to monitor.
 
-Example of a sucessful run:
+Example of a successful run:
 
 ![](Images/RunExample.png)
 
