@@ -60,7 +60,7 @@ Users can specify the hardware events they want to monitor.
 
 Example of a successful run:
 
-![](Images/RunExample.png)
+![](Images/RunExample.PNG)
 
 Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
 
@@ -68,7 +68,7 @@ Please note: there are three fixed hardware events that will be monitored, which
 
 Here is what the output file may look like:
 
-![](Images/output.png)
+![](Images/output.PNG)
 
 ### Use the module (with the script)
 
