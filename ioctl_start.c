@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020 Chutitep Woralert, James Bruska, Caleb DeLaBruere, Chen Liu
+/* Copyright (c) 2017, 2023 James Bruska, Caleb DeLaBruere, Chutitep Woralert
 
 This file is part of K-LEB.
 
@@ -78,136 +78,264 @@ unsigned int NameToRawConfigMask(char* event_name)
 	/* UNKNOWN Event */
 	else return UNKNOWN_EVENT;
 }
+/* Log to file*/
+int val_extract(unsigned int** hardware_events_buffer, int recording, int event,  FILE* log_path)
+{
+	int sample_count=0;
+	int checkempty = 0;
+	int i,j;
+	for ( j=0; j < recording && !checkempty; ++j ) {
+		for ( i=0; i < (event + 3) && !checkempty; ++i ) { 
+			if(hardware_events_buffer[i][j]==-10)
+			{
+				/* End of data buffer */
+				checkempty = 1;
+				break;
+			}
+			else{
+				fprintf(log_path, "%d,", hardware_events_buffer[i][j]);
+			}
+		}
+		/* End of sample */
+		if(!checkempty){
+			++sample_count;
+			fprintf(log_path, "\n");
+		}
+	}
+	fflush(log_path);
+	return sample_count;
+}
 
 int main(int argc, char **argv)
 {
-	// ARGS: Counter1, Counter2, Counter3, Counter4, Timer Delay (in ms), Log path, Program path
-	if(argc < 8){
+
+	int usrcmd;
+	int checkempty;
+	int index;
+	kleb_ioctl_args_t kleb_ioctl_args;
+	int pid;
+	float hrtimer = 1;
+	int mode = 0; //0 single; 1 all
+	int num_events = 0;
+	char eventname[20];
+	char logpath[200];
+
+	/* Check parameters */
+	if(argc < 2){
 		printf("Error reading configurations\nExiting...\n");
 		exit(0);
 	}
 
-	int usrcmd;
-	int checkempty;
-	float hrtimer = 1;
-	kleb_ioctl_args_t kleb_ioctl_args;
-	unsigned int counter[4];
-	int pid = atoi(argv[7]);
+	/* Open module */
+	int fd = open(DEVICE_PATH, O_RDWR);
+	if (fd == -1)
+	{
+		printf("Error in opening file \n");
+		perror("Emesg");
+		exit(-1);
+	}
 
+	/* Catch Ctrl^C signal */
 	checkint=0;
 	signal(SIGINT, sigintHandler);
 
+	/* Set default parameters */
+	memset(kleb_ioctl_args.counter, 0, sizeof(kleb_ioctl_args.counter));
+	kleb_ioctl_args.delay_in_ns = 10000000;
+	kleb_ioctl_args.user_os_rec = 1; //User:1 OS:2 Both:3
+	memset(logpath, 0, sizeof(logpath));
+	strcpy(logpath,"./Output.csv");
 	
-	if(!kill(pid, 0) && pid != 0){
-		/* User pass in program pid */
-		usrcmd = 0;
-	}	
-	else{
-		/* User pass in program path */
-		usrcmd = 1;
-		pid = fork();
-	}
-
-	if (pid == 0)
-	{ 
-		/* Execute child */
-		sleep(1);
-		/* Phrase program arguments */
-		char* cmdargv[argc-7];
-		for (int i = 8; i < argc; i++){
-			cmdargv[i-8] = argv[i];
-		}
-		cmdargv[argc-8]=NULL;
-		execv(argv[7], cmdargv);
-	}
-	else
-	{
-		//printf("DEVICE_PATH: %s\n", DEVICE_PATH);
-		int fd = open(DEVICE_PATH, O_RDWR);
-		if (fd == -1)
-		{
-			printf("Error in opening file \n");
-			perror("Emesg");
-			exit(-1);
-		}
-
-		/* Set pid to monitor */
-		kleb_ioctl_args.pid = pid;
-
-		/* Convert events */
-		for(int i = 1; i < 5; i++){
-			if(isalpha(argv[i][0])){
-				/* Convert event name to event code */
-				counter[i-1] = NameToRawConfigMask(argv[i]);
+	/* Parse inputs */
+	for (index = 1; index < argc; ++index){
+		if(argv[index][0] == '-'){
+			if(argv[index][1] == 'a'){
+				mode = 1;
+				printf("Set monitor all\n");
 			}
-			else{
-				/* Directly use event code */
-				counter[i-1] = strtol(argv[i], NULL, 16);
+			if(argv[index][1] == 't'){
+				++index;
+				hrtimer = strtof(argv[index], NULL);
+				kleb_ioctl_args.delay_in_ns = hrtimer*1000000;
 			}
-		}
-		kleb_ioctl_args.counter1 = counter[0];
-		kleb_ioctl_args.counter2 = counter[1];
-		kleb_ioctl_args.counter3 = counter[2];
-		kleb_ioctl_args.counter4 = counter[3];
-		kleb_ioctl_args.counter_umask = strtol("0x00", NULL, 16); 
-
-		/* Set timer to ns */
-		hrtimer = strtof(argv[5], NULL);
-		kleb_ioctl_args.delay_in_ns = hrtimer*1000000;
-
-		/* Set montitor mode */
-		kleb_ioctl_args.user_os_rec = 1; //User:1 OS:2 Both:3
-		
-		printf("Starting K-LEB...\n");
-
-	 	/* Start monitoring */
-		if(ioctl(fd, IOCTL_START, &kleb_ioctl_args) < 0)
-		{
-			printf("ioctl failed and returned errno %s \n",strerror(errno));
-		}
-				
-		int status = 0;
-		struct timespec t1, t2;
-		unsigned long long int tap_time;
-
-		/* Set user tapping time */
-		tap_time = kleb_ioctl_args.delay_in_ns*250;
-		if(tap_time >= 1000000000 ){
-			t1.tv_sec = tap_time/1000000000;
-			t1.tv_nsec = tap_time-(t1.tv_sec*1000000000);
+			if(argv[index][1] == 'o'){
+				++index;
+				strcpy(logpath,argv[index]);
+			}
+			if(argv[index][1] == 'm'){
+				++index;
+				kleb_ioctl_args.user_os_rec = strtol(argv[index], NULL, 10);
+			}
+			if(argv[index][1] == 'e'){
+				++index;
+				memset(eventname, 0, sizeof(eventname));
+				for(int i = 0; i < strlen(argv[index]); ++i){
+					if(argv[index][i] == ','){
+						if(isalpha(eventname[0])){		
+							kleb_ioctl_args.counter[num_events] = NameToRawConfigMask(eventname);
+						}
+						else{
+							kleb_ioctl_args.counter[num_events] = strtol(eventname, NULL, 16);
+						}
+						//printf(", EVT: %u %s %d\n", kleb_ioctl_args.counter[num_events], eventname, num_events);
+						++num_events;
+						memset(eventname, 0, sizeof(eventname));
+					}
+					else{
+						strncat(eventname, &argv[index][i], 1);
+						if(i == (strlen(argv[index])-1)){					
+							if(isalpha(eventname[0])){		
+								kleb_ioctl_args.counter[num_events] = NameToRawConfigMask(eventname);
+							}
+							else{
+								kleb_ioctl_args.counter[num_events] = strtol(eventname, NULL, 16);
+							}
+							//printf("EVT: %u %s %d\n", kleb_ioctl_args.counter[num_events], eventname, num_events);
+							++num_events;
+							kleb_ioctl_args.num_events = num_events;
+						}
+					}
+				}				
+			}
 		}
 		else{
-			t1.tv_sec = 0;
-			t1.tv_nsec = tap_time;
+			break;
 		}
+	}
 
-		int num_events = 8;
-		int num_recordings = 500;
-		/* Buffer for tapping */
-		unsigned int **hardware_events = malloc( (num_events+1)*sizeof(unsigned int *) );
-		hardware_events[0] = malloc( (num_events+1)*num_recordings*sizeof(unsigned int) );
-								
-		int i, j;
-		int num_sample = 0;
-		int num_tap = 0;
-		int bufindex = 0;
-				
-		for ( i=0; i < (num_events+1); ++i ) {
-			hardware_events[i] = *hardware_events + num_recordings * i;
+	/* Check number of event */
+	if(num_events > 4){
+				printf("This module only support monitoring up to 4 events\n");
+				exit(0);
+	}
+	else if(num_events == 0){
+		/* Set default event if none provided */
+		kleb_ioctl_args.counter[0] = strtol("00c4", NULL, 16);
+		kleb_ioctl_args.counter[1] = strtol("00c5", NULL, 16);
+		kleb_ioctl_args.counter[2] = strtol("4f2e", NULL, 16);
+		kleb_ioctl_args.counter[3] = strtol("412e", NULL, 16);
+		num_events = 4;
+		kleb_ioctl_args.num_events = num_events;
+	}
+	else{
+		/* Program monitoring */
+		if(mode == 0){
+			pid = atoi(argv[index]);
+			if(!kill(pid, 0) && pid != 0){
+				/* User pass in program pid */
+				if(pid == 0 || pid == 1){
+					printf("Unable to find process %d\n", pid);
+					exit(0);
+				}
+				usrcmd = 0;
+			}	
+			else{
+				/* User pass in program path */
+				usrcmd = 1;
+				pid = fork();
+			}
+
+			/* Execute child */
+			if (pid == 0)
+			{ 
+				sleep(1);
+				/* Phrase program arguments */
+				char* cmdargv[argc];
+				for (int i = index; i < argc; ++i){
+					cmdargv[i-index] = argv[i];
+				}
+				cmdargv[argc-index]=NULL;
+				execvp(argv[index], cmdargv);
+				perror("Error: ");
+				exit(0);
+			}
+			else{
+				/* Set pid to monitor */
+				kleb_ioctl_args.pid = pid;
+				/* Check if pid exist */
+				//
+				//printf("PID: %d \n", pid);
+				/* Start monitoring */
+				if(ioctl(fd, IOCTL_START, &kleb_ioctl_args) < 0)
+				{
+					printf("ioctl failed and returned errno %s \n",strerror(errno));
+				}
+			}
 		}
-		/* Buffer for storing data */
-		long int hardware_events_buffer[9][40000];
-		/* Overflow value */
-		long int temp_overflow[7];
-		int size_of_message = num_recordings * (num_events+1) * sizeof(long int);
-				
+		else{
+			/* Monitor system */
+			pid = 1;
+			kleb_ioctl_args.pid = pid;
+			printf("Monitor all\n");
+			if(ioctl(fd, IOCTL_START, &kleb_ioctl_args) < 0)
+			{
+				printf("ioctl failed and returned errno %s \n",strerror(errno));
+			}
+		}
+	}
+
+	/* Tapping parameters */
+	int status = 0;
+	struct timespec t1, t2;
+	unsigned long long int tap_time;
+	/* Buffer parameters for tapping */
+	int i, j;
+	int num_recordings = 500;
+	int num_sample = 0;
+	unsigned int **hardware_events = malloc( (num_events+3)*sizeof(unsigned int *) );
+	int size_of_message = num_recordings * (num_events+3) * sizeof(long int);
+	/* Buffer for storing data */
+	long int hardware_events_buffer[num_events+3][100000];
+	
+
+	/* Set user tapping time */
+	tap_time = kleb_ioctl_args.delay_in_ns*60;
+	if(tap_time >= 1000000000 ){
+		t1.tv_sec = tap_time/1000000000;
+		t1.tv_nsec = tap_time-(t1.tv_sec*1000000000);
+	}
+	else{
+		t1.tv_sec = 0;
+		t1.tv_nsec = tap_time;
+	}
+
+	/* Initialize buffer */
+	hardware_events[0] = malloc( (num_events+3)*num_recordings*sizeof(unsigned int) );								
+	for ( i=0; i < (num_events + 3); ++i ) {
+		hardware_events[i] = *hardware_events + num_recordings * i;
+	}
+
+	/*  Log to file	event list */
+	FILE *logfp = fopen(logpath, "w");
+	if( logfp == NULL ){
+		fprintf(stderr,"Error opening file: %s\n", strerror(errno));
+	}
+	else{
+		printf("Logging data...\n");
+		for(j = 0; j < (num_events + 3); ++j){
+			if(j == num_events){
+				fprintf(logfp, "INST_RETIRED,");
+			}
+			else if(j == num_events+1){
+				fprintf(logfp, "CPU_CLK_CYCLE,");
+			}
+			else if(j == num_events+2){
+				fprintf(logfp, "CPU_REF_CYCLE,");
+			}
+			else{
+				fprintf(logfp, "%x,", kleb_ioctl_args.counter[j]);
+			}
+		}
+		fprintf(logfp, "\n");
+		printf("Log Path: %s\n ", logpath);
+	}
+	/* Monitor program */
+	if(mode == 0){		
 		if(!usrcmd){
 			/* Monitor pid */
 			printf("Monitoring HPC... \nWait for pid %d \nPress Ctrl+C to exit\n", pid);	
 			while (!kill(pid, 0) && !checkint) {
-
 				nanosleep(&t1, &t2);
-
 				/* Extract data from kernel */
 				int ret = read(fd, hardware_events[0], size_of_message);
 				if (ret < 0)
@@ -216,30 +344,11 @@ int main(int argc, char **argv)
 					return errno;
 				}
 				else if (ret == 0){
-					/* Empty data */
-					//printf("Empty string\n");
-					checkempty = 1;
 				}
 				else{
-					checkempty = 0;
-					++num_tap;
-					for ( j=0; j < num_recordings && !checkempty; ++j ) {
-						for ( i=0; i < (num_events+1) && !checkempty; ++i ) { 
-							if(hardware_events[i][j]==-10)
-							{
-								/* End of data buffer */
-								checkempty = 1;
-								break;
-							}
-							else{
-								hardware_events_buffer[i][bufindex] = hardware_events[i][j];
-							}
-						}
-						if(!checkempty)
-							++bufindex;
-							++num_sample;
-					}
+					num_sample += val_extract(hardware_events, num_recordings, num_events, logfp);
 				}
+
 			}
 		}
 		else{
@@ -255,118 +364,60 @@ int main(int argc, char **argv)
 					return errno;
 				}
 				else if (ret == 0){
-					/* Empty data */
-					//printf("Empty string\n");
-					checkempty = 1;
 				}
 				else{
-					checkempty = 0;
-					++num_tap;
-					for ( j=0; j < num_recordings && !checkempty; ++j ) {
-						for ( i=0; i < (num_events+1) && !checkempty; ++i ) { 
-							if(hardware_events[i][j]==-10)
-							{
-								/* End of data buffer */
-								checkempty = 1;
-								break;
-							}
-							else{
-								hardware_events_buffer[i][bufindex] = hardware_events[i][j];
-							}
-						}
-						if(!checkempty){
-							++bufindex;
-							++num_sample;
-						}								
-					}
+					num_sample += val_extract(hardware_events, num_recordings, num_events, logfp);
 				}
 			}
 		}
-				
-		printf("Finish monitoring...\n");
-		/* Stop monitoring */
-		if(ioctl(fd, IOCTL_STOP, "Stopping") < 0)
-		{
-			printf("ioctl failed and returned errno %s \n",strerror(errno));
-		}
-		/* Extract last batch of data */
-		int ret_out = read(fd, hardware_events[0], size_of_message);
-		if (ret_out < 0)
-		{
-			perror("Failed to read the message from the device.\n");
-			return errno;
-		}
-		else if (ret_out == 0){
-			/* Empty data */
-			checkempty = 1;
-		}
-		else{
-			checkempty = 0;
-		}
-		for (j = 0; j < num_recordings && !checkempty; ++j)
-		{
-			for (i = 0; i < (num_events + 1) && !checkempty; ++i)
-			{
-				if(hardware_events[i][j]==-10)
-				{
-					/* End of data buffer */
-					checkempty = 1;
-					break;
-				}						
-				else{
-					hardware_events_buffer[i][bufindex] = hardware_events[i][j];
-							
-				}
-			}
-			if(!checkempty){
-				++bufindex;
-				++num_sample;
-			}
-		}
-		checkempty = 0;
-		printf("Stopping K-LEB...\n# of Sample: %d\n", num_sample);
-
-		/*  Log to file	*/
-		FILE *logfp = fopen(argv[6], "a");
-		if( logfp == NULL ){
-			fprintf(stderr,"Error opening file: %s\n", strerror(errno));
-		}
-		else{
-			fprintf(logfp, "%s,%s,%s,%s,INST,CPU_CLK_CYCLE,CPU_REF_CYCLE,CPU,PID\n", argv[1], argv[2], argv[3], argv[4]);
-			for (j = 0; j < bufindex && !checkempty; ++j)
-			{
-				for (i = 0; i < (num_events + 1) && !checkempty; ++i)
-				{
-					if(j==0){
-						fprintf(logfp, "%ld,", hardware_events_buffer[i][j]);
-					}
-					else if(hardware_events_buffer[4][j]==0 && hardware_events_buffer[5][j]==0 && hardware_events_buffer[6][j]==0 && hardware_events_buffer[7][j]==0 && hardware_events_buffer[8][j]==0){
-						printf("Sample is empty\n ");
-						checkempty = 1;
-						break;
-					}
-					else{
-						if(i < 7 && hardware_events_buffer[i][j] < hardware_events_buffer[i][j-1]){
-							/* Handle overflow */
-							temp_overflow[i] += 4294967295;			
-						}
-						if(i < 7){
-							/* Counters value */
-							fprintf(logfp, "%ld,", hardware_events_buffer[i][j] + temp_overflow[i]);
-						}
-						else
-						{
-							/* CPU & PID */
-							fprintf(logfp, "%ld,", hardware_events_buffer[i][j]);
-						}	
-					}
-				}
-				fprintf(logfp, "\n");
-			}
-			fprintf(logfp, "\n");
-			printf("Log Path: %s\n ", argv[6]);
-		}
-		fclose(logfp);
-		close(fd);
 	}
+	else{
+		/* Monitor system */
+			printf("Monitoring HPC... \nPress Ctrl+C to exit\n");
+			while (!checkint) {	
+				nanosleep(&t1, &t2);
+				/* Extract data from kernel */
+				int ret = read(fd, hardware_events[0], size_of_message);
+				if (ret < 0)
+				{
+					perror("Failed to read the message from the device.\n");
+					return errno;
+				}
+				else if (ret == 0){
+				}
+				else{
+					num_sample += val_extract(hardware_events, num_recordings, num_events, logfp);
+				}
+			}
+	}		
+	printf("Finish monitoring...\n");
+
+	/* Stop monitoring */
+	if(ioctl(fd, IOCTL_STOP, "Stopping") < 0)
+	{
+		printf("ioctl failed and returned errno %s \n",strerror(errno));
+	}
+	
+	printf("Extract last data...\n");
+	/* Extract last batch of data */
+	int ret_out = read(fd, hardware_events[0], size_of_message);
+	if (ret_out < 0)
+	{
+		perror("Failed to read the message from the device.\n");
+		return errno;
+	}
+	else if (ret_out == 0){
+		/* Empty data */
+		printf("Data is empty\n ");
+	}
+	else{
+		num_sample += val_extract(hardware_events, num_recordings, num_events, logfp);
+	}
+
+	printf("Finish Extract last data... \n");
+	printf("Stopping K-LEB...\n# of Sample: %d\n", num_sample);
+
+
+	fclose(logfp);
+	close(fd);
 }
