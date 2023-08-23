@@ -55,7 +55,9 @@ sudo ./ioctl_start -e <Event1>,<Event2>,<Event3>,<Event4> -t <timer delay (in ms
 ```
 
 Users can specify the program to monitor using \<Program PATH\> or \<Program PID\>, as well as supply program parameters, if applicable.
+
 Users can specify the whole system monitoring by using option -a
+
 Users can specify the hardware events they want to monitor.
 
 Example of a successful run:
