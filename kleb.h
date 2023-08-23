@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020 Chutitep Woralert, James Bruska, Caleb DeLaBruere, Chen Liu
+/* Copyright (c) 2017, 2023 James Bruska, Caleb DeLaBruere, Chutitep Woralert
 
 This file is part of K-LEB.
 
@@ -72,11 +72,8 @@ along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
 /* K-LEB parameters */
 typedef struct {
 	int pid;
- 	unsigned int counter1;
- 	unsigned int counter2;
- 	unsigned int counter3;
- 	unsigned int counter4;
-	unsigned long long counter_umask;
+	unsigned int counter[10];
+	unsigned int num_events;
 	unsigned int delay_in_ns;
 	unsigned int user_os_rec; // 1 is user only, 2 is os only, 3 is both	
 } kleb_ioctl_args_t;
@@ -86,7 +83,7 @@ int initialize_timer( void );
 int initialize_ioctl( void );
 int init_module( void );
 
-int start_counters( unsigned int pmu_counter1, unsigned int pmu_counter2, unsigned int pmu_counter3, unsigned int pmu_counter4, unsigned long long pmu_config, unsigned int pmu_user_os_rec);
+int start_counters( void );
 int stop_counters( void );
 int dump_counters( void );
 
@@ -95,7 +92,9 @@ int cleanup_timer( void );
 int cleanup_ioctl( void );
 void cleanup_module( void );
 
-#define FINISH_TASK_SWITCH_NAME "finish_task_switch"
+#define DO_EXIT_NAME "finish_task_switch.isra.0"
+//#define DO_ENTER_NAME "prepare_arch_switch"
+//#define FINISH_TASK_SWITCH_NAME "finish_task_switch"
 
 #define DEBUG
 #ifdef DEBUG
