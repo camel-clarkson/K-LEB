@@ -43,37 +43,19 @@ unsigned int NameToRawConfigMask(char* event_name)
 	/* Branch Events **/
 	if      (strcmp(event_name,"BR_RET") == 0) return BR_RET;
 	else if (strcmp(event_name,"BR_MISP_RET") == 0) return BR_MISP_RET;
-	else if (strcmp(event_name,"BR_EXEC") == 0) return BR_EXEC;
-	else if (strcmp(event_name,"MISP_BR_ANY") == 0) return MISP_BR_ANY;
-	else if (strcmp(event_name,"MISP_BR_UN") == 0) return MISP_BR_UN;
-	else if (strcmp(event_name,"MISP_BR_C") == 0) return MISP_BR_C;
 	/** Cache Events **/
 	else if (strcmp(event_name,"LOAD") == 0) return LOAD;
 	else if (strcmp(event_name,"STORE") == 0) return STORE;
-	else if (strcmp(event_name,"L1_ICACHE_STALL") == 0) return L1_ICACHE_STALL;
-	else if (strcmp(event_name,"L1_ICACHE_REF") == 0) return L1_ICACHE_REF;
 	else if (strcmp(event_name,"L1_ICACHE_MISS") == 0) return L1_ICACHE_MISS;
-	else if (strcmp(event_name,"L1_ICACHE_HIT") == 0) return L1_ICACHE_HIT;
-	else if (strcmp(event_name,"L1_DCACHE_REF") == 0) return L1_DCACHE_REF;
-	else if (strcmp(event_name,"L1_DCACHE_MISS") == 0) return L1_DCACHE_MISS;
-	else if (strcmp(event_name,"L1_DCACHE_HIT") == 0) return L1_DCACHE_HIT;
-	else if (strcmp(event_name,"L2_DATA_REF") == 0) return L2_DATA_REF;
-	else if (strcmp(event_name,"L2_DATA_HIT") == 0) return L2_DATA_HIT;
-	else if (strcmp(event_name,"LLC") == 0) return LLC;
 	else if (strcmp(event_name,"MISS_LLC") == 0) return MISS_LLC;
-	else if (strcmp(event_name,"MEM_LOAD_RETIRED_LLC_MISS") == 0) return MEM_LOAD_RETIRED_LLC_MISS;
 	/** Instruction Events **/
+	else if (strcmp(event_name,"INST_RET") == 0) return INST_RET;
+	else if (strcmp(event_name,"NEAR_RET") == 0) return NEAR_RET;
 	else if (strcmp(event_name,"INST_FP") == 0) return INST_FP;
 	else if (strcmp(event_name,"ARITH_MULT") == 0) return ARITH_MULT;
 	else if (strcmp(event_name,"ARITH_DIV") == 0) return ARITH_DIV;
-	/** Proc calls Events **/
-	else if (strcmp(event_name,"CALL") == 0) return CALL;
-	else if (strcmp(event_name,"CALL_D_EXEC") == 0) return CALL_D_EXEC;
-	else if (strcmp(event_name,"CALL_ID_EXEC") == 0) return CALL_ID_EXEC;
-	else if (strcmp(event_name,"MISP_CALL") == 0) return MISP_CALL;
 	/** TLB Events **/
-	else if (strcmp(event_name,"MISS_ITLB") == 0) return MISS_ITLB;
-	else if (strcmp(event_name,"MISS_DTLB") == 0) return MISS_DTLB;
+	else if (strcmp(event_name,"L1_MISS_DTLB") == 0) return L1_MISS_DTLB;
 	else if (strcmp(event_name,"STLB_HIT") == 0) return STLB_HIT;
 	/* UNKNOWN Event */
 	else return UNKNOWN_EVENT;
@@ -85,7 +67,7 @@ int val_extract(unsigned int** hardware_events_buffer, int recording, int event,
 	int checkempty = 0;
 	int i,j;
 	for ( j=0; j < recording && !checkempty; ++j ) {
-		for ( i=0; i < (event + 3) && !checkempty; ++i ) { 
+		for ( i=0; i < (event) && !checkempty; ++i ) { 
 			if(hardware_events_buffer[i][j]==-10)
 			{
 				/* End of data buffer */
@@ -204,17 +186,19 @@ int main(int argc, char **argv)
 	}
 
 	/* Check number of event */
-	if(num_events > 4){
-				printf("This module only support monitoring up to 4 events\n");
+	if(num_events > 6){
+				printf("This module only support monitoring up to 6 events\n");
 				exit(0);
 	}
 	else if(num_events == 0){
 		/* Set default event if none provided */
-		kleb_ioctl_args.counter[0] = strtol("00c4", NULL, 16);
-		kleb_ioctl_args.counter[1] = strtol("00c5", NULL, 16);
-		kleb_ioctl_args.counter[2] = strtol("4f2e", NULL, 16);
-		kleb_ioctl_args.counter[3] = strtol("412e", NULL, 16);
-		num_events = 4;
+		kleb_ioctl_args.counter[0] = strtol("00c2", NULL, 16);
+		kleb_ioctl_args.counter[1] = strtol("00c3", NULL, 16);
+		kleb_ioctl_args.counter[2] = strtol("0129", NULL, 16);
+		kleb_ioctl_args.counter[3] = strtol("0229", NULL, 16);
+		kleb_ioctl_args.counter[2] = strtol("0729", NULL, 16);
+		kleb_ioctl_args.counter[3] = strtol("00c0", NULL, 16);
+		num_events = 6;
 		kleb_ioctl_args.num_events = num_events;
 	}
 	else{
@@ -282,10 +266,10 @@ int main(int argc, char **argv)
 	int i, j;
 	int num_recordings = 500;
 	int num_sample = 0;
-	unsigned int **hardware_events = malloc( (num_events+3)*sizeof(unsigned int *) );
-	int size_of_message = num_recordings * (num_events+3) * sizeof(long int);
+	unsigned int **hardware_events = malloc( num_events*sizeof(unsigned int *) );
+	int size_of_message = num_recordings * num_events * sizeof(long int);
 	/* Buffer for storing data */
-	long int hardware_events_buffer[num_events+3][100000];
+	long int hardware_events_buffer[num_events][100000];
 	
 
 	/* Set user tapping time */
@@ -300,8 +284,8 @@ int main(int argc, char **argv)
 	}
 
 	/* Initialize buffer */
-	hardware_events[0] = malloc( (num_events+3)*num_recordings*sizeof(unsigned int) );								
-	for ( i=0; i < (num_events + 3); ++i ) {
+	hardware_events[0] = malloc( num_events*num_recordings*sizeof(unsigned int) );								
+	for ( i=0; i < num_events; ++i ) {
 		hardware_events[i] = *hardware_events + num_recordings * i;
 	}
 
@@ -312,19 +296,8 @@ int main(int argc, char **argv)
 	}
 	else{
 		printf("Logging data...\n");
-		for(j = 0; j < (num_events + 3); ++j){
-			if(j == num_events){
-				fprintf(logfp, "INST_RETIRED,");
-			}
-			else if(j == num_events+1){
-				fprintf(logfp, "CPU_CLK_CYCLE,");
-			}
-			else if(j == num_events+2){
-				fprintf(logfp, "CPU_REF_CYCLE,");
-			}
-			else{
-				fprintf(logfp, "%x,", kleb_ioctl_args.counter[j]);
-			}
+		for(j = 0; j < num_events; ++j){
+			fprintf(logfp, "%x,", kleb_ioctl_args.counter[j]);
 		}
 		fprintf(logfp, "\n");
 		printf("Log Path: %s\n ", logpath);
