@@ -49,7 +49,7 @@ MODULE_VERSION("0.8.0");
 static struct hrtimer hr_timer;
 static ktime_t ktime_period_ns;
 static unsigned int delay_in_ns;
-static int num_events, num_recordings, counter, timer_restart;
+static int num_events, num_coreevents, num_l3events, num_recordings, counter, timer_restart;
 static int target_pid, recording;
 static unsigned int **hardware_events;
 static int Major;
@@ -61,12 +61,11 @@ struct cdev *kernel_cdev;
 
 
 /* Counters parameters */
-static int reg_addr, reg_addr_val, reg_fixed_addr_val, event_num, umask, enable_bits, disable_bits, event_on, event_off;
-static int test_counters[10];
-static int addr[4];
-static int addr_fixed;
-static int addr_global;
-static int addr_val[4];
+static uint64_t reg_addr, reg_addr_val, reg_fixed_addr_val, event_num, umask, enable_bits, disable_bits, l3enable_bits, l3disable_bits, event_on, event_off;
+static int core_events[10];
+static int l3_events[10];
+static int addr[6], l3_addr[6];
+static int addr_val[6], l3_addr_val[6];
 static int addr_fixed_val[3];
 static long int eax_low, edx_high;
 long int count_in;
@@ -78,67 +77,92 @@ static int start_init;
 static int fork_check;
 static int first_hpc;
 static int target_ppid;
+
 static int atarget_pid[10000];
 static int atarget_ppid[10000];
 static int acpucheck[10000];
 static int targetloop, targetloopf;
 static int newfork, newthread, activepid;
-static unsigned int evtcount[7];
+static unsigned int evtcount[12];
+static unsigned int l3_evtcount[6];
 
 /* Timer core */
-static struct hrtimer hr_timer_core[8];
-static unsigned int hardware_events_core[10];
-static int timer_restart_core[8];
+static struct hrtimer hr_timer_core[16];
+static unsigned int hardware_events_core[16];
+static int timer_restart_core[16];
 
 /* Initialize counters */
 static long pmu_start_counters(void)
 {
 	int i = 0;
 
-	/* Assign IA32_FIXED_CTR_CTRL MSR & MSR_PERF_GLOBAL_CTRL MSR */
-	addr_fixed = 0x38d;
-	addr_global = 0x38f;
+	/* Setup event selector  */
+	addr[0] = 0xc0010200; 
+	addr[1] = 0xc0010202;  
+	addr[2] = 0xc0010204;
+	addr[3] = 0xc0010206;
+	addr[4] = 0xc0010208;
+	addr[5] = 0xc001020A;
 
-	/* Setup configurable counters */
-	/* Assign perfeventsel0-3 */
-	addr[0] = 0x186; // IA32_PERFEVTSELx MSRs
-	addr[1] = 0x187;
-	addr[2] = 0x188;
-	addr[3] = 0x189;
-
-	//Assign perfctr0-3
-	addr_val[0] = 0xc1; // IA32_PMC MSR // 0xc1 is perfctr0
-	addr_val[1] = 0xc2;
-	addr_val[2] = 0xc3;
-	addr_val[3] = 0xc4;
+	/* Setup counter */
+	addr_val[0] = 0xc0010201; 
+	addr_val[1] = 0xc0010203;
+	addr_val[2] = 0xc0010205;
+	addr_val[3] = 0xc0010207;
+	addr_val[4] = 0xc0010209;
+	addr_val[5] = 0xc001020B;
 	
-	/* Assign events */
+	/* Setup l3 event selector  */
+	l3_addr[0] = 0xc0010230;
+	l3_addr[1] = 0xc0010232;
+	l3_addr[2] = 0xc0010234;
+	l3_addr[3] = 0xc0010236;
+	l3_addr[4] = 0xc0010238;
+	l3_addr[5] = 0xc001023A;
+
+	/* Setup l3 counter */
+	l3_addr_val[0] = 0xc0010231;
+	l3_addr_val[1] = 0xc0010233;
+	l3_addr_val[2] = 0xc0010235;
+	l3_addr_val[3] = 0xc0010237;
+	l3_addr_val[4] = 0xc0010239;
+	l3_addr_val[5] = 0xc001023B;
+
+	/* Seperate event type */
+	num_coreevents = 0;
+	num_l3events = 0;
 	for (i = 0; i < num_events; ++i)
 	{
-		test_counters[i] = kleb_ioctl_args.counter[i];	
+		//printk_d(KERN_INFO "Events Input: %x\n", kleb_ioctl_args.counter[i]);
+		/* Check L3 cache event */
+		if(  kleb_ioctl_args.counter[i]==0xff9a || kleb_ioctl_args.counter[i]==0x0090 || kleb_ioctl_args.counter[i]==0x019A){
+			l3_events[num_l3events] = kleb_ioctl_args.counter[i];
+			//printk_d(KERN_INFO "l3Events convert: %x\n", l3_events[num_l3events]);
+			++num_l3events;	
+		}
+		else{
+			core_events[num_coreevents] = kleb_ioctl_args.counter[i];
+			++num_coreevents;
+		}
 	}
-	
-	/* Define IA32_PERFEVTSELx MSRs parameters */
+	//printk_d(KERN_INFO "Events Core L3: %d %d %d\n", num_events, num_coreevents, num_l3events);
+
+	/* Define setup parameters */
 	user_os_rec &= 0x01; // Enforces requirement of 0 <= user_os_rec <= 3
-	enable_bits = 0x400000 + (user_os_rec << 16);
-	//enable_bits = 0x600000 + (user_os_rec << 16);
-	disable_bits = 0x100000 + (user_os_rec << 16);
-	counter_umask &= 0xFF; // Enforces requirement of 0 <= counter_umask <= 0xFF
+	enable_bits = (0x01 << 22) + (user_os_rec << 16);
+	if(sysmode)
+		l3enable_bits = ((uint64_t)0b11 << 56) + ((uint64_t)0x1 << 47) + ((uint64_t)0x1 << 46) + (0x01 << 22) + (user_os_rec << 16);
+	else
+		l3enable_bits = ((uint64_t)0b11 << 56) + ((uint64_t)0x1 << 47) + ((uint64_t)0x1 << 46) + (0x01 << 22) + (user_os_rec << 16);
+	//printk( KERN_INFO "BIT: %llu %llu \n", enable_bits, l3enable_bits);
+	disable_bits = (0x00 << 22) + (user_os_rec << 16);
+	l3disable_bits = (0x00 << 22) + (user_os_rec << 16);
+	counter_umask &= 0x00; // Enforces requirement of 0 <= counter_umask <= 0xFF
 	umask = counter_umask << 8;
 	eax_low = 0x00;
 
-	/* Setup fixed counters */
-	/* Assign fixedperfctr0-2 */
-	addr_fixed_val[0] = 0x309; //IA32_FIXED_CTR; // 0xc1 is fixedperfctr0
-	addr_fixed_val[1] = 0x30a;
-	addr_fixed_val[2] = 0x30b;
-
-	__asm__("wrmsr"
-			:
-			: "c"(addr_global), "a"(0x00), "d"(0x00));
-	
 	// ******** SET CONFIGURABLE COUNTERS ********//
-	for (i = 0; i < num_events; i++)
+	for (i = 0; i < num_coreevents; i++)
 	{
 		reg_addr_val = addr_val[i];
 		reg_addr = addr[i];
@@ -151,33 +175,31 @@ static long pmu_start_counters(void)
 				:
 				: "c"(reg_addr_val), "a"(0x00), "d"(0x00));
 		//Call read to check initial value for debugging
-		//__asm__("rdmsr"
-		//		: "=a"(eax_low), "=d"(edx_high)
-		//		: "c"(reg_addr_val));
-		//count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		//printk( KERN_INFO "rdmsr in start_counter:   %ld\n", count_in);
+		// __asm__("rdmsr"
+		// 		: "=a"(eax_low), "=d"(edx_high)
+		// 		: "c"(reg_addr_val));
+		// count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
+		//printk( KERN_INFO "rdmsr in start counter:   %ld\n", count_in);
 	}
-
-	// ******** SET FIXED COUNTERS ********//
-	__asm__("wrmsr"
-			:
-			: "c"(addr_fixed), "a"(0x000), "d"(0x00));
-	
-	for (i = 0; i < 3; i++)
+	for (i = 0; i < num_l3events; i++)
 	{
-			reg_fixed_addr_val = addr_fixed_val[i];
+		reg_addr_val = l3_addr_val[i];
+		reg_addr = l3_addr[i];
 
 		__asm__("wrmsr"
 				:
-				: "c"(reg_fixed_addr_val), "a"(0x00), "d"(0x00));
-		//Call read to check initial value for debugging
-		//__asm__("rdmsr"
-		//		: "=a"(eax_low), "=d"(edx_high)
-		//		: "c"(reg_fixed_addr_val));
+				: "c"(reg_addr), "a"(event_off), "d"(0x00));
 
-		//count_in = ((long int)eax_low | (long int)edx_high << 32);
-		//count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		//printk( KERN_INFO "fixed rdmsr [%d] in start:   %ld\n", i, count_in);
+		__asm__("wrmsr"
+				:
+				: "c"(reg_addr_val), "a"(0x00), "d"(0x00));
+		//Call read to check initial value for debugging
+		/*__asm__("rdmsr"
+				: "=a"(eax_low), "=d"(edx_high)
+				: "c"(reg_addr_val));
+		count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);*/
+		//printk( KERN_INFO "rdmsr in start counter:   %ld\n", count_in);
+		//evtcount[i] = 0;
 	}
 	memset(hardware_events_core, 0, sizeof(hardware_events_core));
 	memset(evtcount, 0, sizeof(evtcount));
@@ -190,36 +212,41 @@ static long pmu_stop_counters(void)
 	long int count = 0;
 	int i = 0;
 
-	/* Disable counters on global counter control */
-	__asm__("wrmsr"
-			:
-			: "c"(addr_global), "a"(0x00), "d"(0x00));
-
 	/* Disable configurable counters */
-	for (i = 0; i < num_events; i++)
+	for (i = 0; i < num_coreevents; i++)
 	{
 		reg_addr_val = addr_val[i];
 		reg_addr = addr[i];
-		event_num = test_counters[i];
-		event_on = event_num | umask | enable_bits;
 		event_off = event_num | umask | disable_bits;
 
 		__asm__("wrmsr"
 				:
 				: "c"(reg_addr), "a"(event_off), "d"(0x00));
 		//Read for debugging
-		//__asm__("rdmsr"
-		//		: "=a"(eax_low), "=d"(edx_high)
-		//		: "c"(reg_addr_val));
-		//count = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		
-		//printk(KERN_INFO "rdmsr Counter Stop [%d][%d] %ld \n", i, counter, count);
+		// __asm__("rdmsr"
+		// 		: "=a"(eax_low), "=d"(edx_high)
+		// 		: "c"(reg_addr_val));
+		// count = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
+		// printk(KERN_INFO "Counter Stop [%d][%d] %ld \n", i, counter, count);
 	}
-	
-	/* Disable fixed counters */
-	__asm__("wrmsr"
-			:
-			: "c"(addr_fixed), "a"(0x000), "d"(0x00)); //disable:0 OS:1 User:2 Both:3
+	for (i = 0; i < num_l3events; i++)
+	{
+		reg_addr_val = l3_addr_val[i];
+		reg_addr = l3_addr[i];
+		event_off = event_num | umask | l3disable_bits;
+
+		__asm__("wrmsr"
+				:
+				: "c"(reg_addr), "a"(event_off), "d"(0x00));
+		//Read for debugging
+		/*
+		__asm__("rdmsr"
+				: "=a"(eax_low), "=d"(edx_high)
+				: "c"(reg_addr_val));
+		count = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
+		*/
+		//printk(KERN_INFO "Counter Stop [%d][%d] %ld \n", i, counter, count);
+	}
 
 	return count;
 }
@@ -230,19 +257,13 @@ static long pmu_restart_counters(void)
 	int i = 0;
 	edx_high = 0x00;
 
-	/* Enable counters on global counter control  */
-	__asm__("wrmsr"
-			:
-			: "c"(addr_global), "a"(0x0f), "d"(0x07)); //4 HPCs 3 Fixed HPC
-
 	/* Enable configuration counters */
-	for (i = 0; i < num_events; i++)
+	for (i = 0; i < num_coreevents; i++)
 	{
 		reg_addr_val = addr_val[i];
 		reg_addr = addr[i];
-		event_num = test_counters[i];
-		event_on = event_num | umask | enable_bits;
-		event_off = event_num | umask | disable_bits;
+		event_num = core_events[i];
+		event_on = event_num | umask | l3enable_bits;
 
 		eax_low = 0;
 		__asm__("wrmsr"
@@ -250,52 +271,57 @@ static long pmu_restart_counters(void)
 				: "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
 
 		//Read for debugging
-		/* __asm__("rdmsr"
-				: "=a"(eax_low), "=d"(edx_high)
-				: "c"(reg_addr_val));
-		count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		printk( KERN_INFO "rdmsr reset:   %ld", count_in);*/
+		//  __asm__("rdmsr"
+		// 		: "=a"(eax_low), "=d"(edx_high)
+		// 		: "c"(reg_addr_val));
+		// count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
+		// printk( KERN_INFO "rdmsr reset:   %ld", count_in);
+
 		/* Enable counting */
 		__asm__("wrmsr"
 				:
 				: "c"(reg_addr), "a"(event_on), "d"(0x00));
 	}
 
-	
-	
-	for (i = 0; i < 3; i++)
+	for (i = 0; i < num_l3events; i++)
 	{
-		reg_fixed_addr_val = addr_fixed_val[i];
-
+		reg_addr_val = l3_addr_val[i];
+		reg_addr = l3_addr[i];
+		event_num = l3_events[i];
+		if(sysmode)
+			event_on = event_num | umask | l3enable_bits;
+		else	
+			event_on = event_num | umask | (l3enable_bits + ((uint64_t)0x0 << 42) + ((uint64_t)0x0 << 48));
 		eax_low = 0;
 		__asm__("wrmsr"
 				:
-				: "c"(reg_fixed_addr_val), "a"(eax_low), "d"(edx_high));
+				: "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
+
 		//Read for debugging
-		/*__asm__("rdmsr"
-				: "=a"(eax_low), "=d"(edx_high)
-				: "c"(reg_fixed_addr_val));
+		//  __asm__("rdmsr"
+		// 		: "=a"(eax_low), "=d"(edx_high)
+		// 		: "c"(reg_addr_val));
+		// count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
+		// printk( KERN_INFO "rdmsr reset:   %ld", count_in);
 
-		count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		printk( KERN_INFO "fixed rdmsr [%d] in restart:   %ld", i, count_in);*/
+		/* Enable counting */
+		__asm__("wrmsr"
+				:
+				: "c"(reg_addr), "a"(event_on), "d"(0x00));
 	}
-	/* Enable fixed counters */
-	__asm__("wrmsr"
-			:
-			: "c"(addr_fixed), "a"(0x222), "d"(0x00)); //disable:0 OS:1 User:2 Both:3
-
+	
 	return reg_addr_val;
 }
 
-/* Read counters value */
+/* Read & aggregate counters value */
 static long pmu_read_counters(void)
 {
 	long int count;
 	int i = 0;
-	/* Extract counter values */
-	for (i = 0; i < num_events + 3; i++)
+	/* Read configuration counters */
+	for (i = 0; i < num_events; i++)
 	{
-		/******* Counting/Subtract ********/
+		/******* Counting/Subtract ********/ 
 		evtcount[i] = hardware_events_core[i];
 		hardware_events[i][counter] = evtcount[i];
 		hardware_events_core[i] = 0;
@@ -308,19 +334,17 @@ static long pmu_read_counters_core(void)
 {
 	long int count;
 	int i = 0;
-	/* Read value from configuration counters */
-	for (i = 0; i < num_events; i++)
+	/* Read configuration counters */
+	for (i = 0; i < num_coreevents; i++)
 	{
 		reg_addr_val = addr_val[i];
 		reg_addr = addr[i];
-		event_num = test_counters[i];
-
-		event_on = event_num | umask | enable_bits;
-		event_off = event_num | umask | disable_bits;
+		event_num = core_events[i];
 
 		__asm__("rdmsr"
 				: "=a"(eax_low), "=d"(edx_high)
 				: "c"(reg_addr_val));
+
 		count = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
 		hardware_events_core[i] += count;
 
@@ -330,23 +354,25 @@ static long pmu_read_counters_core(void)
 				: "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
 	}
 
-	/* Read fixed counters */
-	for (i = 0; i < 3; i++)
+	for (i = 0; i < num_l3events; i++)
 	{
-		reg_fixed_addr_val = addr_fixed_val[i];
+		reg_addr_val = l3_addr_val[i];
+		reg_addr = l3_addr[i];
+		event_num = l3_events[i];
 
 		__asm__("rdmsr"
 				: "=a"(eax_low), "=d"(edx_high)
-				: "c"(reg_fixed_addr_val));
-		count_in = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
-		
-		hardware_events_core[i+num_events] += count_in;
+				: "c"(reg_addr_val));
+
+		count = ((uint64_t)eax_low | (uint64_t)edx_high << 32);
+		hardware_events_core[i+num_coreevents] += count;
+
 		eax_low = 0;
 		__asm__("wrmsr"
 				:
-				: "c"(reg_fixed_addr_val), "a"(eax_low), "d"(edx_high));
+				: "c"(reg_addr_val), "a"(eax_low), "d"(edx_high));
 	}
-	
+
 	return count;
 }
 int kprobes_handle_finish_task_switch_pre(struct kprobe *p, struct pt_regs *regs)
@@ -354,110 +380,110 @@ int kprobes_handle_finish_task_switch_pre(struct kprobe *p, struct pt_regs *regs
 	if(recording && (counter < num_recordings) && start_init)
 	{
 		if(sysmode){
-				/* System monitoring tracker */
-				if(!timer_restart_core[current->on_cpu] && current->pid!=0 && current->pid!=1){
-					timer_restart_core[current->on_cpu] = 1;
+			/* System monitoring tracker */
+			if(!timer_restart_core[current->cpu] && current->pid!=0 && current->pid!=1){
+				timer_restart_core[current->cpu] = 1;
+				pmu_restart_counters();
+				
+				/* Initialize main hrtimer */
+				if (counter < num_recordings && first_hpc == 0)
+				{
+					ktime_period_ns = ktime_set(0, delay_in_ns);
+					hrtimer_start(&hr_timer, ktime_period_ns, HRTIMER_MODE_REL);
+					//printk(KERN_INFO "Timer start on PID: %d CPU: %d GCPU: %d", current->pid, current->cpu, get_cpu());	
+				}
+				++first_hpc;
+				/* Initialize sub hrtimers */
+				ktime_period_ns = ktime_set(0, delay_in_ns);
+				hrtimer_start(&hr_timer_core[current->cpu], ktime_period_ns, HRTIMER_MODE_REL);	
+				//printk(KERN_INFO "Timer start on CPU: %d", current->cpu);	
+			}
+		}
+		else{
+			for(targetloop = 0; targetloop <= fork_check; ++targetloop){
+				if (current->pid == atarget_pid[targetloop])
+				{
+					//printk(KERN_INFO "Process in: %s [%d] [%d] #Fork: %d Index: %d\n", current->comm, current->pid, current->cpu, fork_check, targetloop);
+					//printk(KERN_INFO "Process in: pid[%d] tgid[%d]",current->pid,current->tgid);
+					timer_restart_core[current->cpu] = 1;
 					pmu_restart_counters();
-					
+
 					/* Initialize main hrtimer */
-					if (counter < num_recordings && first_hpc == 0)
+					if (counter < num_recordings && first_hpc <= 0)
 					{
 						ktime_period_ns = ktime_set(0, delay_in_ns);
 						hrtimer_start(&hr_timer, ktime_period_ns, HRTIMER_MODE_REL);
-						//printk(KERN_INFO "Timer start on PID: %d CPU: %d GCPU: %d", current->pid, current->on_cpu, get_cpu());	
+						printk(KERN_INFO "Main Timer start on PID: %d CPU: %d GCPU: %d", current->pid, current->cpu, get_cpu());	
+
 					}
 					++first_hpc;
-					/* Initialize sub hrtimers */
+
+					/* Initialize sub hrtimer */
 					ktime_period_ns = ktime_set(0, delay_in_ns);
-					hrtimer_start(&hr_timer_core[current->on_cpu], ktime_period_ns, HRTIMER_MODE_REL);	
-					//printk(KERN_INFO "Timer start on CPU: %d", current->on_cpu);	
+					hrtimer_start(&hr_timer_core[current->cpu], ktime_period_ns, HRTIMER_MODE_REL);
+					atarget_ppid[targetloop] = 1;
+					acpucheck[targetloop] = current->cpu;
+					printk(KERN_INFO "Sub timer start on CPU: %d", current->cpu);	
 				}
-		}
-		else{
-			/* Process Monitoring */
-			for(targetloop = 0; targetloop <= fork_check; ++targetloop){
-					if (current->pid == atarget_pid[targetloop])
-					{
-						//printk(KERN_INFO "Process in: %s [%d] [%d] #Fork: %d Index: %d\n", current->comm, current->pid, current->on_cpu, fork_check, targetloop);
-						//printk(KERN_INFO "Process in: pid[%d] tgid[%d]",current->pid,current->tgid);
-						timer_restart_core[current->on_cpu] = 1;
-						pmu_restart_counters();
-
-						/* Initialize main hrtimer */
-						if (counter < num_recordings && first_hpc <= 0)
-						{
-							ktime_period_ns = ktime_set(0, delay_in_ns);
-							hrtimer_start(&hr_timer, ktime_period_ns, HRTIMER_MODE_REL);
-						}
-						++first_hpc;
-
-						/* Initialize sub hrtimer */
-						ktime_period_ns = ktime_set(0, delay_in_ns);
-						hrtimer_start(&hr_timer_core[current->on_cpu], ktime_period_ns, HRTIMER_MODE_REL);
-						//printk(KERN_INFO "Timer start on PID: %d CPU: %d", current->pid, current->on_cpu);
-						atarget_ppid[targetloop] = 1;
-						acpucheck[targetloop] = current->on_cpu;
-					}
-					else if (current->parent->pid == atarget_pid[targetloop])
-					{
-						/* Fork detected */
-						newfork = 1;
-						/* Check if fork exist */
-						for(targetloopf = 0; targetloopf <= fork_check; ++targetloopf){
-							if(atarget_pid[targetloopf] == current->pid){
-								newfork = 0;
-								break;
-							}
-						}
-						/* Add new fork pid to tracker */
-						if(newfork){
-							++fork_check;	
-							++activepid;
-							atarget_pid[fork_check] = current->pid;
-							acpucheck[fork_check] = current->on_cpu;
-							//printk(KERN_INFO "Fork detect!!: %s PID: %d CPU: %d", current->comm, current->pid, current->on_cpu);
+				else if (current->parent->pid == atarget_pid[targetloop])
+				{
+					/* Fork detected */
+					newfork = 1;
+					/* Check if fork exist */
+					for(targetloopf = 0; targetloopf <= fork_check; ++targetloopf){
+						if(atarget_pid[targetloopf] == current->pid){
+							newfork = 0;
+							break;
 						}
 					}
-					else if (current->tgid == atarget_pid[targetloop] && current->tgid != 0){
-						/* Thread detected */
-						newthread = 1;
-						/* Check if thread exist */
-						for(targetloopf = 0; targetloopf <= fork_check; ++targetloopf){
-							if(atarget_pid[targetloopf] == current->pid){
-								newthread = 0;
-								break;
-							}
-						}
-						/* Add new thread to tracker */
-						if(newthread){
-							++fork_check;	
-							++activepid;
-							atarget_pid[fork_check] = current->pid;
-							acpucheck[fork_check] = current->on_cpu;
-							//printk(KERN_INFO "Thread detect!!: %s pid: %d tgid: %d cpu: %d old cpu: %d", current->comm, current->pid, current->tgid, current->on_cpu, acpucheck[targetloop]);
-							//printk(KERN_INFO "Process (fork) in: %s [%d] [%d] [%d]\n", current->comm, current->pid, current->on_cpu, current->state);
-						}
+					/* Add new fork pid to tracker */
+					if(newfork){
+						++fork_check;	
+						++activepid;
+						atarget_pid[fork_check] = current->pid;
+						acpucheck[fork_check] = current->cpu;
+						//printk(KERN_INFO "Fork detect!!: %s PID: %d CPU: %d", current->comm, current->pid, current->cpu);
 					}
-					if (current->pid != atarget_pid[targetloop] && atarget_ppid[targetloop] && current->on_cpu == acpucheck[targetloop])
-					{
-						/* Process switch out of cpu */
-						atarget_ppid[targetloop] = 0;			
-
-						/* Stop counter and extract value */
-						hrtimer_cancel(&hr_timer_core[current->on_cpu]);						
-						pmu_stop_counters();			
-						timer_restart_core[current->on_cpu] = 0;
-						if (counter < num_recordings)
-						{	
-							pmu_read_counters_core();
-						}
-						--first_hpc;
-						//printk(KERN_INFO "Process out: %s [%d] [%d] #Fork: %d Index: %d\n", current->comm, current->pid, current->on_cpu, fork_check, targetloop);
-						//printk(KERN_INFO "Process out: pid[%d] tgid[%d]",current->pid,current->tgid);
-						//printk(KERN_INFO "Timer stop on PID: %d CPU: %d", current->pid, current->on_cpu);
-					}
-					
 				}
+				else if (current->tgid == atarget_pid[targetloop] && current->tgid != 0){
+					/* Thread detected */
+					newthread = 1;
+					/* Check if thread exist */
+					for(targetloopf = 0; targetloopf <= fork_check; ++targetloopf){
+						if(atarget_pid[targetloopf] == current->pid){
+							newthread = 0;
+							break;
+						}
+					}
+					/* Add new thread to tracker */
+					if(newthread){
+						//printk(KERN_INFO "Thread detect!!: %s pid: %d tgid: %d cpu: %d old cpu: %d", current->comm, current->pid, current->tgid, current->cpu, acpucheck[targetloop]);
+						//printk(KERN_INFO "Process (fork) in: %s [%d] [%d] [%d]\n", current->comm, current->pid, current->cpu, current->state);
+						++fork_check;	
+						++activepid;
+						atarget_pid[fork_check] = current->pid;
+						acpucheck[fork_check] = current->cpu;
+					}
+				}
+				if (current->pid != atarget_pid[targetloop] && atarget_ppid[targetloop] && current->cpu == acpucheck[targetloop])
+				{
+					/* Process switch out of cpu */
+					atarget_ppid[targetloop] = 0;	
+
+					/* Stop counter and extract value */		
+					hrtimer_cancel(&hr_timer_core[current->cpu]);						
+					pmu_stop_counters();			
+					timer_restart_core[current->cpu] = 0;
+					if (counter < num_recordings)
+					{
+						pmu_read_counters_core();
+					}
+					//--first_hpc;
+					//printk(KERN_INFO "Process out: %s [%d] [%d] #Fork: %d Index: %d\n", current->comm, current->pid, current->on_cpu, fork_check, targetloop);
+					//printk(KERN_INFO "Process out: pid[%d] tgid[%d]",current->pid,current->tgid);
+					//printk(KERN_INFO "Timer stop on PID: %d CPU: %d", current->pid, current->on_cpu);
+				}
+			}
 		}
 	}
 
@@ -469,7 +495,7 @@ int kprobes_handle_finish_task_switch_pre(struct kprobe *p, struct pt_regs *regs
 	{
 			if (current->pid == target_pid)
 			{
-				printk(KERN_INFO "finish_task_switch_post: %s [%d] [%d] [%d]\n", current->comm, current->pid, current->on_cpu, current->state);
+				printk(KERN_INFO "finish_task_switch_post: %s [%d] [%d] [%d]\n", current->comm, current->pid, current->cpu, current->state);
 			}
 		
 	}
@@ -486,7 +512,7 @@ static int kprobes_handle_do_exit_pre(struct kprobe *p, struct pt_regs *regs)
 				/* Stop timer & extract counter values */
 				--activepid;
 				pmu_stop_counters();
-				timer_restart_core[current->on_cpu] = 0;
+				timer_restart_core[current->cpu] = 0;
 				atarget_ppid[targetloop] = 0;
 				if (counter < num_recordings)
 				{
@@ -496,11 +522,11 @@ static int kprobes_handle_do_exit_pre(struct kprobe *p, struct pt_regs *regs)
 				if(activepid <= 0){
 					int i;
 					hrtimer_cancel(&hr_timer);
-					for(i = 0; i < 8; i++){
+					for(i = 0; i < 16; i++){
 						hrtimer_cancel(&hr_timer_core[i]);
 					}	
 				}
-				//printk(KERN_INFO "do_exit_pre: %s [%d] [%d] [%ld] #pid: %d\n", current->comm, current->pid, current->on_cpu, current->state, activepid);
+			//printk(KERN_INFO "do_exit_pre: %s [%d] [%d] [%ld] #pid: %d\n", current->comm, current->pid, current->cpu, current->state, activepid);
 			}
 		}
 	}
@@ -513,7 +539,7 @@ static int kprobes_handle_do_exit_pre(struct kprobe *p, struct pt_regs *regs)
 		for(targetloop = 0; targetloop <= fork_check; ++targetloop){
 			if (current->pid == atarget_pid[targetloop])
 			{
-				printk(KERN_INFO "do_exit_post: %s [%d] [%d] [%ld]\n", current->comm, current->pid, current->on_cpu, current->state);
+				printk(KERN_INFO "do_exit_post: %s [%d] [%d] [%ld]\n", current->comm, current->pid, current->cpu, current->state);
 			}
 		}
 	}
@@ -525,7 +551,7 @@ static int kprobes_handle_do_exit_pre(struct kprobe *p, struct pt_regs *regs)
 		for(targetloop = 0; targetloop <= fork_check; ++targetloop){
 			if (current->pid == atarget_pid[targetloop])
 			{
-				//printk(KERN_INFO "do_fork_pre: %s [%d] [%d] [%ld]\n", current->comm, current->pid, current->on_cpu, current->state);
+				//printk(KERN_INFO "do_fork_pre: %s [%d] [%d] [%ld]\n", current->comm, current->pid, current->cpu, current->state);
 			}
 		}
 	}
@@ -538,7 +564,7 @@ static int kprobes_handle_do_exit_pre(struct kprobe *p, struct pt_regs *regs)
 		for(targetloop = 0; targetloop <= fork_check; ++targetloop){
 			if (current->pid == atarget_pid[targetloop])
 			{
-				printk(KERN_INFO "do_fork_post: %s [%d] [%d] [%ld]\n", current->comm, current->pid, current->on_cpu, current->state);
+				printk(KERN_INFO "do_fork_post: %s [%d] [%d] [%ld]\n", current->comm, current->pid, current->cpu, current->state);
 			}
 		}
 	}
@@ -595,7 +621,7 @@ int register_all(void)
 	return (0);
 }
 
-/* Restart main timer */
+/* Restart timer */
 enum hrtimer_restart hrtimer_callback(struct hrtimer *timer)
 {
 	ktime_t kt_now;
@@ -604,9 +630,10 @@ enum hrtimer_restart hrtimer_callback(struct hrtimer *timer)
 	if (timer_restart && (counter < num_recordings) && first_hpc > 0)
 	{
 		/* Read counter */
+		printk(KERN_INFO "Main Timer restart on CPU: %d", current->cpu);
 		pmu_read_counters();
 		++counter;
-
+		//printk(KERN_INFO "Extract value on CPU: %d, val: %d", current->cpu, hardware_events[4][counter-1]);	
 		/* Forward timer */
 		kt_now = hrtimer_cb_get_time(&hr_timer);
 		hrtimer_forward(&hr_timer, kt_now, ktime_period_ns);
@@ -624,6 +651,10 @@ enum hrtimer_restart hrtimer_callback(struct hrtimer *timer)
 		{
 			printk("Counter > allowed spaces: %d > %d\n", counter, num_recordings);
 		}
+		else 
+		{
+			printk("Timer discontinue\n");
+		}
 		return HRTIMER_NORESTART;
 	}
 }
@@ -633,28 +664,28 @@ enum hrtimer_restart hrtimer_callback_core(struct hrtimer *timer)
 	ktime_t kt_now;
 
 	/* Restart timer */
-	if (timer_restart_core[current->on_cpu] && (counter < num_recordings))
+	if (timer_restart_core[current->cpu] && (counter < num_recordings))
 	{
 		/* Read counter */
-		//printk(KERN_INFO "Timer on CPU: %d", current->on_cpu);
+		printk(KERN_INFO "Sub Timer restart on CPU: %d", current->cpu);
 		pmu_read_counters_core();
 
 		/* Forward timer */
-		kt_now = hrtimer_cb_get_time(&hr_timer_core[current->on_cpu]);
-		hrtimer_forward(&hr_timer_core[current->on_cpu], kt_now, ktime_period_ns);
+		kt_now = hrtimer_cb_get_time(&hr_timer_core[current->cpu]);
+		hrtimer_forward(&hr_timer_core[current->cpu], kt_now, ktime_period_ns);
 
 		return HRTIMER_RESTART;
 	}
 	/* Overflow stop timer */
 	else
 	{
-		if (!timer_restart_core[current->on_cpu])
+		if (!timer_restart_core[current->cpu])
 		{
-			printk("Timer on CPU:%d Expired\n", current->on_cpu);
+			printk("Timer on CPU:%d Expired\n", current->cpu);
 		}
 		else if (counter > num_recordings)
 		{
-			printk("CPU: %d Counter > allowed spaces: %d > %d\n", current->on_cpu, counter, num_recordings);
+			printk("CPU: %d Counter > allowed spaces: %d > %d\n", current->cpu, counter, num_recordings);
 		}
 		return HRTIMER_NORESTART;
 	}
@@ -672,7 +703,7 @@ int start_counters()
 		counter = 0;
 
 		/* Set empty buffer */
-		for (i = 0; i < (num_events + 3); ++i)
+		for (i = 0; i < (num_events); ++i)
 		{ 
 			for (j = 0; j < num_recordings; ++j)
 			{
@@ -710,7 +741,7 @@ int stop_counters()
 	int i;
 	/* Stop counters */
 	hrtimer_cancel(&hr_timer);
-	for(i = 0; i < 8; i++){
+	for(i = 0; i < 16; i++){
 		hrtimer_cancel(&hr_timer_core[i]);
 	}
 	pmu_stop_counters();
@@ -743,8 +774,8 @@ int open(struct inode *inode, struct file *fp)
 /* Read for extract data to user */
 ssize_t read(struct file *filep, char *buffer, size_t len, loff_t *offset)
 {
-	int size_of_message = num_recordings * (num_events + 3) * sizeof(unsigned int);
-	int size_of_realmessage = counter * (num_events + 3) * sizeof(unsigned int);
+	int size_of_message = num_recordings * (num_events) * sizeof(unsigned int);
+	int size_of_realmessage = counter * (num_events) * sizeof(unsigned int);
 	int error_count = 0;
 	int x, y;
 
@@ -760,7 +791,7 @@ ssize_t read(struct file *filep, char *buffer, size_t len, loff_t *offset)
 			counter = 0;
 
 			/* Reset buffer value */
-			for (x = 0; x < (num_events + 3); ++x)
+			for (x = 0; x < (num_events); ++x)
 			{ 
 				for (y = 0; y < num_recordings; ++y)
 				{
@@ -846,12 +877,11 @@ int ioctl_funcs(struct inode *inode, struct file *fp, unsigned int cmd, unsigned
 				printk(KERN_INFO "Memory failed to initialize");
 				return (-ENODEV);
 			}
-			/* Monitor system if target pid = 0,1 */
 			if(target_pid == 1 || target_pid == 0){
-				sysmode = 1;
+					sysmode = 1;
 			}
 			else{
-				sysmode = 0;
+					sysmode = 0;
 			}
 			start_counters();
 			break;
@@ -904,9 +934,9 @@ int initialize_memory()
 	num_recordings = 500;
 
 	/* Create data buffer */
-	hardware_events = kmalloc((num_events + 3) * sizeof(unsigned int *), GFP_KERNEL);
-	hardware_events[0] = kmalloc((num_events + 3) * num_recordings * sizeof(unsigned int), GFP_KERNEL);
-	for (i = 0; i < (num_events + 3); ++i)
+	hardware_events = kmalloc((num_events) * sizeof(unsigned int *), GFP_KERNEL);
+	hardware_events[0] = kmalloc((num_events) * num_recordings * sizeof(unsigned int), GFP_KERNEL);
+	for (i = 0; i < (num_events); ++i)
 	{ // This reduces the number of kmalloc calls
 		hardware_events[i] = *hardware_events + num_recordings * i;
 		for (j = 0; j < num_recordings; ++j)
@@ -927,7 +957,7 @@ int initialize_timer()
 	hrtimer_init(&hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	hr_timer.function = &hrtimer_callback;
 	
-	for(i = 0; i < 8; i++){
+	for(i = 0; i < 16; i++){
 		hrtimer_init(&hr_timer_core[i], CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 		hr_timer_core[i].function = &hrtimer_callback_core;
 	}
@@ -1016,7 +1046,7 @@ int cleanup_timer()
 	printk("Timer cleaning up\n");
 	////////////////////
 	
-	for(i = 0; i < 8; i++){
+	for(i = 0; i < 16; i++){
 		hrtimer_cancel(&hr_timer_core[i]);
 	}
 	////////////////////
