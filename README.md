@@ -9,10 +9,12 @@
 
 ## Supported Kernel
 The current build is tested on Linux Kernel 5.4.0-1045-aws and earlier on AWS Graviton Processors
+
 The current build is tested on Linux Kernel 5.10.103-v8+ and earlier on Raspberry Pi 4
 
 ## Supported Processors
 This version of K-LEB supports Arm Neoverse processors up to 16 cores with hardware performance counters
+
 This version of K-LEB also supports Raspberry Pi 4 processors up to 4 cores with hardware performance counters
 
 # Setup
