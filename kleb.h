@@ -35,38 +35,26 @@ along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
 #define DEVICE_PATH "/dev/" DEVICE_NAME
 
 /* Branch Events */
-#define BR_RET 0x00c4
-#define BR_MISP_RET 0x00c5
-#define BR_EXEC 0x7f88
-#define MISP_BR_ANY 0x7f89
-#define MISP_BR_UN 0x0289
-#define MISP_BR_C 0x0189
+#define BR_RET 0x12
+#define BR_MISP_RET 0x10
+#define BR_IMMED_SPEC 0x78
+#define BR_RETURN_SPEC 0x79
+#define BR_INDIRECT_SPEC 0x7A
+
 /* Cache Events */
-#define LOAD 0x010b
-#define STORE 0x020b
-#define L1_ICACHE_STALL 0x0480
-#define L1_ICACHE_REF 0x0380
-#define L1_ICACHE_MISS 0x0280
-#define L1_ICACHE_HIT 0x0180
-#define L1_DCACHE_REF 0x0143
-#define L1_DCACHE_MISS 0x0151
-#define L1_DCACHE_HIT 0x01cb
-#define L2_DATA_REF 0xff26
-#define L2_DATA_HIT 0x02cb
-#define LLC 0x4f2e
-#define MISS_LLC 0x412e
-#define MEM_LOAD_RETIRED_LLC_MISS 0x10cb
-/* Instructions Events */
-#define INST_FP 0x02c0
-#define ARITH_MULT 0x0214
-#define ARITH_DIV 0x0114
-#define CALL 0x02c4
-#define CALL_D_EXEC 0x1088
-#define CALL_ID_EXEC 0x2088
-#define MISP_CALL 0x02c5
-#define MISS_ITLB 0x0185
-#define MISS_DTLB 0x0149
-#define STLB_HIT 0x1049
+#define LOAD 0x70
+#define STORE 0x71
+#define L1D_CACHE_LD 0x40
+#define L1D_CACHE_ST 0x41
+#define L1D_CACHE_REFILL_LD 0x42
+#define L1D_CACHE_REFILL_ST 0x43
+#define L2D_CACHE_LD 0x50
+#define L2D_CACHE_ST 0x51
+#define L2D_CACHE_REFILL_LD 0x52
+#define L2D_CACHE_REFILL_ST 0x53
+#define L2D_CACHE 0x16
+#define L2D_CACHE_REFILL 0x17
+
 #define UNKNOWN_EVENT 0xffff
 
 /* K-LEB parameters */
@@ -83,7 +71,7 @@ int initialize_timer( void );
 int initialize_ioctl( void );
 int init_module( void );
 
-int start_counters( void );
+int start_counters( unsigned int pmu_counter1, unsigned int pmu_counter2, unsigned int pmu_counter3, unsigned int pmu_counter4, unsigned long long pmu_config, unsigned int pmu_user_os_rec);
 int stop_counters( void );
 int dump_counters( void );
 
@@ -92,9 +80,9 @@ int cleanup_timer( void );
 int cleanup_ioctl( void );
 void cleanup_module( void );
 
-#define DO_EXIT_NAME "finish_task_switch.isra.0"
-//#define DO_ENTER_NAME "prepare_arch_switch"
-//#define FINISH_TASK_SWITCH_NAME "finish_task_switch"
+#define DO_EXIT_NAME "finish_task_switch"
+#define DO_ENTER_NAME "prepare_arch_switch"
+#define FINISH_TASK_SWITCH_NAME "finish_task_switch"
 
 #define DEBUG
 #ifdef DEBUG
@@ -102,5 +90,4 @@ void cleanup_module( void );
 #else
 	#define printk_d(...)
 #endif // DEBUG
-
 #endif // KLEB_H
