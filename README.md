@@ -8,10 +8,12 @@
 3. The ability to monitor events periodically with a high-resolution kernel timer
 
 ## Supported Kernel
-The current build is tested on Linux Kernel 6.2.0-26 and earlier
+The current build is tested on Linux Kernel 5.4.0-1045-aws and earlier on AWS Graviton Processors
+The current build is tested on Linux Kernel 5.10.103-v8+ and earlier on Raspberry Pi 4
 
 ## Supported Processors
-This version of K-LEB supports Intel/x86 processors up to core i7 with hardware performance counters
+This version of K-LEB supports Arm Neoverse processors up to 16 cores with hardware performance counters
+This version of K-LEB also supports Raspberry Pi 4 processors up to 4 cores with hardware performance counters
 
 # Setup
 
@@ -64,7 +66,7 @@ Example of a successful run:
 
 ![](Images/RunExample.PNG)
 
-Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
+Please note: there are one fixed hardware events that will be monitored, which is Clock Cycles, in addition to the ones specified on the command line (programmable hardware events). 
 
 - After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
@@ -85,7 +87,7 @@ Run initialize.sh using the configuration file perf.cfg for events selection
 
 Users can change the perf.cfg file to select the hardware events they want to monitor.
 
-Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
+Please note: there are one fixed hardware events that will be monitored, which is Clock Cycles, in addition to the ones specified on the command line (programmable hardware events). 
 
 To start monitoring using the kernel module, run:
 ```
