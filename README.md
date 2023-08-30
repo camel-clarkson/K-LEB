@@ -8,10 +8,10 @@
 3. The ability to monitor events periodically with a high-resolution kernel timer
 
 ## Supported Kernel
-The current build is tested on Linux Kernel 6.2.0-26 and earlier
+The current build is tested on Linux Kernel 5.15.0-76 and earlier
 
 ## Supported Processors
-This version of K-LEB supports Intel/x86 processors up to core i7 with hardware performance counters
+This version of K-LEB supports AMD Ryzen processors up to 8 cores with hardware performance counters
 
 # Setup
 
@@ -64,8 +64,6 @@ Example of a successful run:
 
 ![](Images/RunExample.PNG)
 
-Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
-
 - After finish monitoring, HPC data is logged and stored in Output.csv in the current directory or in \<Log path\>
 
 Here is what the output file may look like:
@@ -85,7 +83,6 @@ Run initialize.sh using the configuration file perf.cfg for events selection
 
 Users can change the perf.cfg file to select the hardware events they want to monitor.
 
-Please note: there are three fixed hardware events that will be monitored, which are instructions retired, Cycles when the thread is not halted, and Reference cycles when the thread is not halted, in addition to the ones specified on the command line (programmable hardware events). 
 
 To start monitoring using the kernel module, run:
 ```
