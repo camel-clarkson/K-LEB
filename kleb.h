@@ -35,38 +35,21 @@ along with K-LEB.  If not, see <https://www.gnu.org/licenses/>. */
 #define DEVICE_PATH "/dev/" DEVICE_NAME
 
 /* Branch Events */
-#define BR_RET 0x00c4
-#define BR_MISP_RET 0x00c5
-#define BR_EXEC 0x7f88
-#define MISP_BR_ANY 0x7f89
-#define MISP_BR_UN 0x0289
-#define MISP_BR_C 0x0189
+#define BR_RET 0x00c2
+#define BR_MISP_RET 0x00c3
 /* Cache Events */
-#define LOAD 0x010b
-#define STORE 0x020b
-#define L1_ICACHE_STALL 0x0480
-#define L1_ICACHE_REF 0x0380
-#define L1_ICACHE_MISS 0x0280
-#define L1_ICACHE_HIT 0x0180
-#define L1_DCACHE_REF 0x0143
-#define L1_DCACHE_MISS 0x0151
-#define L1_DCACHE_HIT 0x01cb
-#define L2_DATA_REF 0xff26
-#define L2_DATA_HIT 0x02cb
-#define LLC 0x4f2e
-#define MISS_LLC 0x412e
-#define MEM_LOAD_RETIRED_LLC_MISS 0x10cb
+#define LOAD 0x0129
+#define STORE 0x0229
+#define L1_ICACHE_MISS 0x1060
+#define MISS_LLC 0xff9a
 /* Instructions Events */
-#define INST_FP 0x02c0
-#define ARITH_MULT 0x0214
-#define ARITH_DIV 0x0114
-#define CALL 0x02c4
-#define CALL_D_EXEC 0x1088
-#define CALL_ID_EXEC 0x2088
-#define MISP_CALL 0x02c5
-#define MISS_ITLB 0x0185
-#define MISS_DTLB 0x0149
-#define STLB_HIT 0x1049
+#define INST_RET 0x00c0
+#define NEAR_RET 0x00c8
+#define INST_FP 0xff03
+#define ARITH_MULT 0x0203
+#define ARITH_DIV 0x0403
+#define L1_MISS_DTLB 0xff45
+#define STLB_HIT 0x0084
 #define UNKNOWN_EVENT 0xffff
 
 /* K-LEB parameters */
@@ -92,9 +75,9 @@ int cleanup_timer( void );
 int cleanup_ioctl( void );
 void cleanup_module( void );
 
-#define DO_EXIT_NAME "finish_task_switch.isra.0"
-//#define DO_ENTER_NAME "prepare_arch_switch"
-//#define FINISH_TASK_SWITCH_NAME "finish_task_switch"
+#define DO_EXIT_NAME "finish_task_switch"
+#define DO_ENTER_NAME "prepare_arch_switch"
+#define FINISH_TASK_SWITCH_NAME "finish_task_switch"
 
 #define DEBUG
 #ifdef DEBUG
